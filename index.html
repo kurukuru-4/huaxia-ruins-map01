@@ -1124,9 +1124,20 @@ function tryLoadMap(urls, index) {
     .catch(function() { tryLoadMap(urls, index + 1); });
 }
 
-function initMapWithGeoJson(geoJson) {
+function tryLoadChinaMapScript(urls, index, onReady, onFail) {
+  if (index >= urls.length) { onFail(); return; }
+  var s = document.createElement('script');
+  s.src = urls[index];
+  s.onload = function() {
+    if (window.echarts && echarts.getMap && echarts.getMap('china')) onReady();
+    else tryLoadChinaMapScript(urls, index + 1, onReady, onFail);
+  };
+  s.onerror = function() { tryLoadChinaMapScript(urls, index + 1, onReady, onFail); };
+  document.head.appendChild(s);
+}
+
+function initChartAfterMapReady() {
   document.getElementById('loading').classList.add('hidden');
-  echarts.registerMap('china', geoJson);
   chart = echarts.init(document.getElementById('chart'), null, { renderer:'canvas' });
   renderChart();
   chart.on('click', function(params) {
@@ -1139,13 +1150,28 @@ function initMapWithGeoJson(geoJson) {
   window.addEventListener('resize', function() { chart.resize(); });
 }
 
+function initMapWithGeoJson(geoJson) {
+  echarts.registerMap('china', geoJson);
+  initChartAfterMapReady();
+}
+
 if (!window.echarts) {
   document.getElementById('loading').innerHTML =
     '<span style="color:#FF6347">ECharts 脚本加载失败<br><small style="opacity:.6">请检查网络，或将 echarts.min.js 下载到本地后改为本地引用</small></span>';
 } else if (window.CHINA_GEOJSON) {
   initMapWithGeoJson(window.CHINA_GEOJSON);
+} else if (echarts.getMap && echarts.getMap('china')) {
+  initChartAfterMapReady();
 } else {
-  tryLoadMap(MAP_URLS, 0);
+  tryLoadChinaMapScript([
+    'https://cdn.jsdelivr.net/npm/echarts@5/map/js/china.js',
+    'https://unpkg.com/echarts@5/map/js/china.js',
+    'https://cdnjs.cloudflare.com/ajax/libs/echarts/5.4.3/map/js/china.js'
+  ], 0, function() {
+    initChartAfterMapReady();
+  }, function() {
+    tryLoadMap(MAP_URLS, 0);
+  });
 }
 </script>
 </body>
