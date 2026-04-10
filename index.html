@@ -1107,6 +1107,7 @@ var MAP_URLS = [
   'https://cdn.jsdelivr.net/npm/china-geojson@1.0.0/china.json',
   'https://unpkg.com/china-map-echarts@latest/src/china.json',
 ];
+var MAP_LOAD_ERRORS = [];
 
 function tryLoadMap(urls, index) {
   if (index >= urls.length) {
@@ -1114,8 +1115,11 @@ function tryLoadMap(urls, index) {
     var tip = isFileProtocol
       ? '检测到你正在直接打开本地文件，请改用本地服务器访问（如：python3 -m http.server）'
       : '请检查网络连接或确认 china.json 是否可访问';
+    var debug = MAP_LOAD_ERRORS.length
+      ? ('<br><small style="opacity:.45">最近失败：' + MAP_LOAD_ERRORS[MAP_LOAD_ERRORS.length - 1] + '</small>')
+      : '';
     document.getElementById('loading').innerHTML =
-      '<span style="color:#FF6347">\u5730\u56FE\u52A0\u8F7D\u5931\u8D25\uFF0C\u6240\u6709\u6E90\u5747\u4E0D\u53EF\u7528<br><small style="opacity:.6">' + tip + '</small></span>';
+      '<span style="color:#FF6347">\u5730\u56FE\u52A0\u8F7D\u5931\u8D25\uFF0C\u6240\u6709\u6E90\u5747\u4E0D\u53EF\u7528<br><small style="opacity:.6">' + tip + '</small>' + debug + '</span>';
     return;
   }
   document.querySelector('#loading span').textContent = '\u6B63\u5728\u52A0\u8F7D\u5730\u56FE (' + (index+1) + '/' + urls.length + ')...';
@@ -1124,7 +1128,10 @@ function tryLoadMap(urls, index) {
     .then(function(geoJson) {
       initMapWithGeoJson(geoJson);
     })
-    .catch(function() { tryLoadMap(urls, index + 1); });
+    .catch(function(err) {
+      MAP_LOAD_ERRORS.push(urls[index] + ' -> ' + (err && err.message ? err.message : 'fetch failed'));
+      tryLoadMap(urls, index + 1);
+    });
 }
 
 function tryLoadChinaMapScript(urls, index, onReady, onFail) {
@@ -1166,6 +1173,7 @@ if (!window.echarts) {
 } else if (echarts.getMap && echarts.getMap('china')) {
   initChartAfterMapReady();
 } else {
+  MAP_LOAD_ERRORS.push('window.CHINA_GEOJSON 不存在，进入网络兜底');
   tryLoadChinaMapScript([
     'https://cdn.jsdelivr.net/npm/echarts@5/map/js/china.js',
     'https://unpkg.com/echarts@5/map/js/china.js',
