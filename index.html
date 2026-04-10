@@ -4,8 +4,11 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>秘境遗址图鉴</title>
-<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<script src="./echarts.min.js"></script>
 <script>
+if (!window.echarts) {
+  document.write('<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"><\\/script>');
+}
 if (!window.echarts) {
   document.write('<script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"><\\/script>');
 }
@@ -1157,7 +1160,7 @@ function initMapWithGeoJson(geoJson) {
 
 if (!window.echarts) {
   document.getElementById('loading').innerHTML =
-    '<span style="color:#FF6347">ECharts 脚本加载失败<br><small style="opacity:.6">请检查网络，或将 echarts.min.js 下载到本地后改为本地引用</small></span>';
+    '<span style="color:#FF6347">ECharts 脚本加载失败<br><small style="opacity:.6">离线模式请将 echarts.min.js 放在 index.html 同目录</small></span>';
 } else if (window.CHINA_GEOJSON) {
   initMapWithGeoJson(window.CHINA_GEOJSON);
 } else if (echarts.getMap && echarts.getMap('china')) {
