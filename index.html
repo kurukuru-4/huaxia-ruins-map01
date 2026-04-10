@@ -1,0 +1,1127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>秘境遗址图鉴</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+html,body { width:100%; height:100%; background:#000814; overflow:hidden; font-family:STKaiti,KaiTi,STSong,SimSun,serif; }
+#app { width:100vw; height:100vh; display:flex; flex-direction:column; position:relative; }
+#header { text-align:center; padding:11px 0 4px; z-index:10; flex-shrink:0; position:relative; background:linear-gradient(180deg,#000814 60%,transparent); }
+#header h1 { font-size:clamp(16px,2.6vw,30px); color:#C8A951; letter-spacing:.22em; text-shadow:0 0 20px rgba(200,169,81,.9),0 0 50px rgba(200,169,81,.4); font-weight:normal; }
+#header p { margin-top:3px; color:rgba(200,169,81,.4); font-size:clamp(9px,1vw,11px); letter-spacing:.35em; }
+
+
+#map-wrap { flex:1; position:relative; min-height:0; }
+#chart { width:100%; height:100%; }
+#loading { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:#C8A951; font-size:16px; letter-spacing:.2em; z-index:20; flex-direction:column; gap:10px; }
+#loading.hidden { display:none; }
+#loading span { display:block; }
+.load-bar { width:150px; height:2px; background:rgba(200,169,81,.15); border-radius:2px; overflow:hidden; }
+.load-inner { height:100%; background:linear-gradient(90deg,#C8A951,#FFD700); animation:la 1.5s ease-in-out infinite; }
+@keyframes la { 0%{width:0%;margin-left:0} 50%{width:60%;margin-left:20%} 100%{width:0%;margin-left:100%} }
+
+/* 朝代侧边栏 */
+#era-sidebar { position:absolute; left:0; top:0; bottom:50px; width:80px; background:rgba(0,5,15,.92); border-right:1px solid rgba(200,169,81,.14); z-index:15; display:flex; flex-direction:column; overflow-y:auto; scrollbar-width:none; transition:transform .32s cubic-bezier(.4,0,.2,1); }
+#era-sidebar.collapsed { transform:translateX(-80px); }
+#sidebar-toggle { position:absolute; left:80px; top:calc(50% - 25px); width:18px; height:50px; background:rgba(0,5,15,.92); border:1px solid rgba(200,169,81,.22); border-left:none; border-radius:0 6px 6px 0; cursor:pointer; z-index:16; display:flex; align-items:center; justify-content:center; color:rgba(200,169,81,.55); font-size:11px; transition:left .32s cubic-bezier(.4,0,.2,1),color .18s; user-select:none; }
+#sidebar-toggle:hover { color:#FFD700; background:rgba(200,169,81,.1); }
+#era-sidebar::-webkit-scrollbar { display:none; }
+#era-sidebar-title { color:rgba(200,169,81,.45); font-size:9px; letter-spacing:.18em; text-align:center; padding:7px 0 5px; border-bottom:1px solid rgba(200,169,81,.1); flex-shrink:0; }
+.era-btn { background:transparent; border:none; border-bottom:1px solid rgba(200,169,81,.07); border-left:2.5px solid transparent; color:rgba(200,169,81,.35); padding:6px 2px; cursor:pointer; font-size:clamp(10px,1.1vw,12px); letter-spacing:.06em; transition:all .2s; font-family:inherit; text-align:center; width:100%; }
+.era-btn:hover { background:rgba(200,169,81,.06); color:rgba(200,169,81,.7); }
+.era-btn.active { background:rgba(200,169,81,.1); font-weight:bold; }
+.era-btn .yr { font-size:.62em; opacity:.5; margin-top:1px; display:block; }
+
+/* 朝代底栏 */
+#era-bar { position:absolute; left:80px; right:0; bottom:0; height:50px; background:rgba(0,5,15,.93); border-top:1px solid rgba(200,169,81,.13); z-index:14; display:flex; align-items:center; padding:0 12px; gap:10px; overflow:hidden;  transition:left .32s cubic-bezier(.4,0,.2,1); }
+#era-bar-strip { width:3px; height:28px; border-radius:2px; flex-shrink:0; }
+#era-bar-name { font-size:clamp(11px,1.2vw,14px); letter-spacing:.1em; white-space:nowrap; flex-shrink:0; }
+#era-bar-yrs { color:rgba(200,169,81,.38); font-size:9px; white-space:nowrap; flex-shrink:0; }
+#era-bar-desc { color:rgba(200,169,81,.55); font-size:clamp(9px,.9vw,10.5px); line-height:1.5; overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+
+/* 详情面板 */
+#panel {
+  position:fixed; left:0; right:0; bottom:0;
+  background:rgba(0,5,15,.97);
+  border-top:1px solid rgba(200,169,81,.25);
+  border-radius:16px 16px 0 0;
+  padding:16px 20px 20px;
+  z-index:200;
+  backdrop-filter:blur(16px);
+  transform:translateY(100%);
+  transition:transform .32s cubic-bezier(.4,0,.2,1);
+  max-height:70vh;
+  overflow-y:auto;
+  scrollbar-width:thin;
+  scrollbar-color:rgba(200,169,81,.15) transparent;
+  box-shadow:0 -8px 40px rgba(0,0,0,.6);
+}
+#panel.show { transform:translateY(0); }
+/* 顶部拖拽把手 */
+#panel::before {
+  content:'';
+  display:block;
+  width:36px; height:3px;
+  background:rgba(200,169,81,.3);
+  border-radius:2px;
+  margin:0 auto 12px;
+}
+#panel-close { position:absolute; top:14px; right:16px; background:rgba(200,169,81,.1); border:1px solid rgba(200,169,81,.25); color:rgba(200,169,81,.7); border-radius:50%; width:24px; height:24px; font-size:11px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all .15s; }
+#panel-close:hover { color:#C8A951; }
+#panel-typemark { font-size:10px; letter-spacing:.1em; margin-bottom:5px; padding:2px 7px; border-radius:3px; display:inline-block; }
+#panel-hdr { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+#panel-top { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; margin-bottom:8px; }
+#panel-badges { display:flex; flex-wrap:wrap; gap:4px; flex-shrink:0; max-width:50%; justify-content:flex-end; }
+#panel-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+#panel-name { font-size:clamp(14px,1.6vw,18px); font-weight:normal; letter-spacing:.1em; }
+#panel-badges { display:flex; flex-wrap:wrap; gap:4px; margin-bottom:9px; }
+.pbadge { display:inline-block; border-radius:3px; padding:2px 6px; font-size:9.5px; letter-spacing:.07em; }
+#panel-desc { color:#D4B896; font-size:clamp(11px,1.05vw,12px); line-height:1.9; letter-spacing:.04em; word-break:break-all; white-space:normal; max-width:100%; }
+#panel-visit { margin-top:8px; padding:6px 9px; border-radius:5px; font-size:9.5px; line-height:1.7; }
+#panel-coord { margin-top:9px; padding-top:7px; color:rgba(200,169,81,.28); font-size:9px; letter-spacing:.07em; }
+
+/* 工具栏（左上，侧边栏右侧） */
+#toolbar { position:absolute; top:52px; left:88px; right:18px; display:flex; flex-direction:column; gap:4px; z-index:13; transition:left .32s cubic-bezier(.4,0,.2,1); }
+.tb-row { display:flex; flex-wrap:wrap; gap:4px; align-items:center; }
+.tb-btn { background:rgba(0,5,15,.85); border:1px solid rgba(200,169,81,.2); border-radius:4px; padding:3px 9px; color:rgba(200,169,81,.48); font-size:9.5px; cursor:pointer; font-family:inherit; transition:all .2s; letter-spacing:.05em; white-space:nowrap; user-select:none; }
+.tb-btn:hover { color:#C8A951; border-color:rgba(200,169,81,.55); }
+.tb-btn.on { color:#FFD700; border-color:#C8A951; background:rgba(200,169,81,.1); }
+
+/* 图例（右下） */
+#legend { position:absolute; bottom:58px; right:14px; background:rgba(0,5,15,.88); border:1px solid rgba(200,169,81,.17); border-radius:7px; z-index:12; min-width:120px; overflow:hidden; }
+#legend-header { display:flex; align-items:center; justify-content:space-between; padding:6px 12px; cursor:pointer; user-select:none; }
+#legend-toggle-btn { background:none; border:none; color:rgba(200,169,81,.55); font-size:10px; cursor:pointer; padding:0; font-family:inherit; }
+#legend-body { padding:0 12px 8px; }
+#legend-body.collapsed { display:none; }
+.ltitle { color:rgba(200,169,81,.58); font-size:9px; letter-spacing:.14em; margin-bottom:5px; }
+.li { display:flex; align-items:center; gap:5px; margin-bottom:3px; cursor:pointer; }
+.li:hover .ln { color:#FFD700; }
+.ld { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+.ln { color:#D4B896; font-size:9.5px; }
+#legend-tip { margin-top:5px; padding-top:4px; border-top:1px solid rgba(200,169,81,.1); color:rgba(200,169,81,.22); font-size:8px; }
+
+/* ── 境外遗迹面板 ── */
+#extra-panel{position:absolute;bottom:18px;right:18px;width:262px;background:rgba(5,3,0,.93);border:1px solid rgba(200,169,81,.35);border-radius:6px;z-index:20;font-family:STKaiti,KaiTi,STSong,SimSun,serif;box-shadow:0 4px 24px rgba(0,0,0,.6);}
+#extra-header{display:flex;align-items:center;justify-content:space-between;padding:8px 12px;cursor:pointer;user-select:none;border-bottom:1px solid rgba(200,169,81,.15);}
+#extra-header-title{color:#C8A951;font-size:12px;letter-spacing:.15em;}
+#extra-toggle-arrow{color:#C8A951;font-size:11px;}
+#extra-body{max-height:340px;overflow-y:auto;padding:6px 0;}
+#extra-body.collapsed{display:none;}
+#extra-empty{padding:14px;color:rgba(200,169,81,.35);font-size:11px;text-align:center;letter-spacing:.1em;}
+.extra-card{margin:5px 10px;padding:9px 11px;background:rgba(200,169,81,.05);border:1px solid rgba(200,169,81,.12);border-radius:4px;margin-bottom:6px;}
+.extra-card-header{display:flex;align-items:center;gap:6px;margin-bottom:5px;}
+.extra-card-name{color:#FFD700;font-size:12px;font-weight:bold;letter-spacing:.06em;}
+.extra-card-era{color:rgba(200,169,81,.6);font-size:10px;background:rgba(200,169,81,.1);border-radius:3px;padding:1px 5px;}
+.extra-card-badge{margin-left:auto;font-size:9px;color:#87CEEB;background:rgba(0,100,180,.2);border:1px solid rgba(0,150,255,.25);border-radius:3px;padding:1px 5px;letter-spacing:.05em;}
+.extra-card-desc{color:rgba(245,222,179,.72);font-size:10.5px;line-height:1.55;margin-bottom:5px;}
+.extra-card-visit{color:rgba(135,206,235,.75);font-size:10px;line-height:1.45;border-top:1px solid rgba(200,169,81,.1);padding-top:5px;}
+
+/* 搜索框 */
+#search-wrap {
+  position:absolute; right:14px; top:8px; z-index:150;
+  display:flex; flex-direction:column; align-items:flex-end; gap:4px;
+}
+#search-input {
+  width:180px; background:rgba(0,5,15,.85); border:1px solid rgba(200,169,81,.35);
+  border-radius:6px; padding:5px 10px 5px 30px; color:#D4B896;
+  font-family:STKaiti,KaiTi,serif; font-size:12px; outline:none;
+  transition:border-color .2s, width .2s;
+}
+#search-input:focus { border-color:rgba(200,169,81,.7); width:220px; }
+#search-input::placeholder { color:rgba(200,169,81,.35); }
+#search-icon {
+  position:absolute; left:8px; top:50%; transform:translateY(-50%);
+  color:rgba(200,169,81,.5); font-size:12px; pointer-events:none;
+}
+#search-results {
+  width:220px; background:rgba(0,5,15,.95); border:1px solid rgba(200,169,81,.25);
+  border-radius:6px; overflow:hidden; max-height:260px; overflow-y:auto;
+  scrollbar-width:thin; scrollbar-color:rgba(200,169,81,.15) transparent;
+  display:none;
+}
+#search-results.show { display:block; }
+.sr-item {
+  padding:7px 12px; cursor:pointer; border-bottom:1px solid rgba(200,169,81,.08);
+  transition:background .15s;
+}
+.sr-item:last-child { border-bottom:none; }
+.sr-item:hover { background:rgba(200,169,81,.1); }
+.sr-name { color:#D4B896; font-size:12px; font-family:STKaiti,KaiTi,serif; }
+.sr-meta { color:rgba(200,169,81,.5); font-size:10px; margin-top:2px; }
+.sr-empty { padding:12px; color:rgba(200,169,81,.35); font-size:11px; text-align:center; }
+#search-clear {
+  position:absolute; right:8px; top:50%; transform:translateY(-50%);
+  color:rgba(200,169,81,.4); font-size:11px; cursor:pointer;
+  display:none; transition:color .15s;
+}
+#search-clear:hover { color:rgba(200,169,81,.9); }
+#search-input:not(:placeholder-shown) ~ #search-clear { display:block; }
+
+@media (max-width: 768px) {
+  #header {
+    padding: 8px 0 2px;
+  }
+
+  #header h1 {
+    font-size: 18px;
+    letter-spacing: .14em;
+  }
+
+  #header p {
+    font-size: 9px;
+    letter-spacing: .18em;
+  }
+
+  #era-sidebar {
+    transform: translateX(-80px);
+  }
+
+  #sidebar-toggle {
+    left: 0 !important;
+    top: 44%;
+    width: 20px;
+    height: 44px;
+  }
+
+  #era-bar {
+    left: 0 !important;
+    height: 44px;
+    padding: 0 8px;
+    gap: 6px;
+  }
+
+  #era-bar-name {
+    font-size: 12px;
+  }
+
+  #era-bar-yrs {
+    display: none;
+  }
+
+  #era-bar-desc {
+    font-size: 9px;
+    -webkit-line-clamp: 1;
+  }
+
+  #toolbar {
+    top: 46px;
+    left: 8px !important;
+    right: 8px;
+    gap: 6px;
+  }
+
+  .tb-row {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+
+  .tb-row::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tb-btn {
+    flex: 0 0 auto;
+    font-size: 10px;
+    padding: 5px 8px;
+  }
+
+  #search-wrap {
+    top: 6px;
+    right: 8px;
+  }
+
+  #search-input {
+    width: min(62vw, 200px);
+    font-size: 12px;
+  }
+
+  #search-input:focus {
+    width: min(70vw, 220px);
+  }
+
+  #search-results {
+    width: min(70vw, 220px);
+    max-height: 200px;
+  }
+
+  #legend {
+    right: 8px;
+    bottom: 52px;
+    min-width: 92px;
+    max-width: 42vw;
+  }
+
+  #legend-header {
+    padding: 5px 8px;
+  }
+
+  #legend-body {
+    padding: 0 8px 6px;
+  }
+
+  .ln {
+    font-size: 9px;
+  }
+
+  #extra-panel {
+    right: 8px;
+    bottom: 108px;
+    width: min(72vw, 220px);
+  }
+
+  #extra-body {
+    max-height: 180px;
+  }
+
+  #panel {
+    padding: 14px 14px 18px;
+    max-height: 78vh;
+    border-radius: 14px 14px 0 0;
+  }
+
+  #panel-name {
+    font-size: 16px;
+  }
+
+  #panel-desc {
+    font-size: 12px;
+    line-height: 1.75;
+  }
+}
+
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="header">
+    <h1>秘境遗址图鉴</h1>
+    <p>华夏疆域与考古秘境 · 千年尘封，一图尽览</p>
+    
+  </div>
+  <div id="search-wrap">
+    <div style="position:relative">
+      <span id="search-icon">🔍</span>
+      <input id="search-input" type="text" placeholder="搜索遗址、朝代..." oninput="doSearch(this.value)" onblur="setTimeout(function(){hideSearch()},200)">
+      <span id="search-clear" onclick="clearSearch()" title="清空">✕</span>
+    </div>
+    <div id="search-results"></div>
+  </div>
+  <div id="map-wrap">
+    <div id="loading"><span>正在加载华夏地图...</span><div class="load-bar"><div class="load-inner"></div></div></div>
+    <div id="chart"></div>
+  </div>
+  <div id="era-bar">
+    <div id="era-bar-strip"></div>
+    <div id="era-bar-name"></div>
+    <div id="era-bar-yrs"></div>
+    <div id="era-bar-desc"></div>
+  </div>
+</div>
+
+<div id="era-sidebar">
+  <div id="era-sidebar-title">朝代纪年</div>
+  <div id="era-list"></div>
+</div>
+<div id="sidebar-toggle" onclick="toggleSidebar()">❯</div>
+
+<!-- 工具栏：连线 + 各类型开关 -->
+<div id="toolbar">
+  <div class="tb-row">
+    <button class="tb-btn" id="btn-routes" onclick="toggleFilter('routes');event.stopPropagation()">◈ 丝路连线</button>
+    <button class="tb-btn on" id="btn-MUMMY" onclick="toggleFilter('MUMMY');event.stopPropagation()">● 古尸遗址</button>
+    <button class="tb-btn on" id="btn-COFFIN" onclick="toggleFilter('COFFIN');event.stopPropagation()">● 悬棺/古棺</button>
+    <button class="tb-btn on" id="btn-PALACE" onclick="toggleFilter('PALACE');event.stopPropagation()">● 地宫(可入)</button>
+  </div>
+  <div class="tb-row">
+    <button class="tb-btn on" id="btn-PALACE_X" onclick="toggleFilter('PALACE_X');event.stopPropagation()">● 地宫(未开)</button>
+    <button class="tb-btn on" id="btn-BRONZE" onclick="toggleFilter('BRONZE');event.stopPropagation()">● 青铜/祭祀</button>
+    <button class="tb-btn on" id="btn-TREASURE" onclick="toggleFilter('TREASURE');event.stopPropagation()">● 王陵宝藏</button>
+    <button class="tb-btn on" id="btn-MURAL_TOMB" onclick="toggleFilter('MURAL_TOMB');event.stopPropagation()">● 壁画墓</button>
+  </div>
+</div>
+
+
+<!-- 境外遗迹面板 -->
+<div id="extra-panel">
+  <div id="extra-header" onclick="toggleExtraPanel()">
+    <span id="extra-header-title">&#9670; 境外遗迹</span>
+    <span id="extra-toggle-arrow">&#10095;</span>
+  </div>
+  <div id="extra-body" class="collapsed">
+    <div id="extra-empty">当前朝代无境外遗迹记录</div>
+  </div>
+</div>
+
+<div id="panel">
+  <button id="panel-close" onclick="closePanel()">✕</button>
+  <div id="panel-typemark"></div>
+  <div id="panel-top">
+    <div>
+      <div id="panel-hdr"><div id="panel-dot"></div><div id="panel-name"></div></div>
+    </div>
+    <div id="panel-badges"></div>
+  </div>
+  <div id="panel-desc"></div>
+  <div id="panel-visit"></div>
+  <div id="panel-coord"></div>
+</div>
+
+<div id="legend">
+  <div id="legend-header" onclick="toggleLegend()">
+    <span class="ltitle" style="margin:0">▪ 遗址图例</span>
+    <button id="legend-toggle-btn">▲</button>
+  </div>
+  <div id="legend-body">
+    <div id="legend-items"></div>
+    <div id="legend-tip">点击遗址查看详情</div>
+  </div>
+</div>
+
+<script>
+var isMobilePortrait = window.matchMedia('(max-width: 768px)').matches;
+
+// ============================================================
+// \u7C7B\u578B\u5B9A\u4E49
+// ============================================================
+var TYPES = {
+  MUMMY:    { label:'\u53E4\u5C38\u9057\u5740',    color:'#5B9EA0' },  // 明水鸭色
+  COFFIN:   { label:'\u60AC\u68FA/\u53E4\u68FA',   color:'#B85C4A' },  // 辛辣红
+  PALACE:   { label:'\u5730\u5BAB(\u53EF\u5165)',  color:'#D4874E' },  // 黄玉黄橙
+  PALACE_X: { label:'\u5730\u5BAB(\u672A\u5F00)',  color:'#C4A882' },  // 苍白赭
+  BRONZE:   { label:'\u9752\u94DC/\u796D\u7940',   color:'#7A8C5E' },  // 山葵绿
+  TREASURE: { label:'\u738B\u9675\u5B9D\u85CF',    color:'#4A7B9D' },  // 刚玉蓝
+  MURAL_TOMB: { label:'\u58C1\u753B\u5893', color:'#8F7AC8' },
+};
+
+// \u7ED9\u5DE5\u5177\u680F\u6309\u94AE\u4E0A\u989C\u8272
+Object.keys(TYPES).forEach(function(k) {
+  var btn = document.getElementById('btn-' + k);
+  if (btn) btn.style.color = TYPES[k].color;
+});
+
+// ============================================================
+// \u671D\u4EE3\u6570\u636E \u2014 16\u671D\uFF0C\u6BCF\u671D\u8FB9\u754C ~25-30 \u4E2A\u5750\u6807\u70B9
+// ============================================================
+var ERAS = [
+  { label:'\u897F\u5468', yrs:'\u524D1046\u2014\u524D771', color:'#B8860B',
+    desc:'\u5468\u6B66\u738B\u706D\u5546\u5EFA\u5468\uFF0C\u5B9A\u90FD\u9550\u4EAC\u3002\u5B9E\u884C\u5206\u5C01\u5236\uFF0C\u793C\u4E50\u9F0E\u76DB\uFF0C\u53F2\u79F0\u300C\u90C1\u90C1\u4E4E\u6587\u54C9\u300D\uFF0C\u534E\u590F\u793C\u5236\u4E4B\u6E90\u3002',
+    border:[[98, 33],[100, 31],[101, 29],[103, 27],[104, 25],[106, 23],[108, 21],[110, 20],[112, 20],[114, 20],[116, 21],[118, 22],[120, 24],[121, 26],[122, 28],[122, 31],[122, 33],[121, 35],[120, 37],[119, 39],[117, 40],[115, 41],[113, 41],[111, 41],[109, 41],[107, 41],[105, 40],[103, 39],[101, 38],[100, 37],[99, 35],[98, 34],[98, 33]] },
+  { label:'\u6625\u79CB', yrs:'\u524D770\u2014\u524D476', color:'#9B8040',
+    desc:'\u5468\u5BA4\u4E1C\u8FC1\uFF0C\u8BF8\u4FAF\u4E89\u970A\uFF0C\u9F50\u6853\u664B\u6587\u79F0\u970A\u5929\u4E0B\u3002\u5B54\u5B50\u5468\u6E38\u5217\u56FD\uFF0C\u767E\u5BB6\u4E89\u9E23\u521D\u73B0\uFF0C\u534E\u590F\u6587\u5316\u5927\u7E41\u8363\u3002',
+    border:[[97, 33],[99, 31],[100, 29],[102, 27],[103, 25],[105, 23],[107, 21],[109, 20],[111, 19],[113, 19],[115, 20],[117, 21],[119, 23],[121, 25],[122, 27],[123, 29],[124, 31],[124, 33],[123, 36],[122, 38],[121, 40],[119, 42],[117, 43],[115, 43],[113, 43],[110, 43],[108, 43],[106, 42],[104, 41],[102, 40],[100, 38],[99, 37],[98, 35],[97, 34],[97, 33]] },
+  { label:'\u6218\u56FD', yrs:'\u524D475\u2014\u524D221', color:'#6B8E6B',
+    desc:'\u4E03\u96C4\u5E76\u7ACB\uFF0C\u94C1\u5668\u666E\u53CA\uFF0C\u5546\u9C05\u53D8\u6CD5\u5F3A\u79E6\u3002\u5408\u7EB5\u8FDE\u6A2A\uFF0C\u767E\u5BB6\u4E89\u9E23\u8FBE\u9876\u5CF0\uFF0C\u5929\u4E0B\u4E00\u7EDF\u5728\u5373\u3002',
+    border:[[97, 33],[99, 31],[100, 29],[101, 27],[103, 25],[105, 23],[107, 21],[109, 20],[111, 19],[113, 19],[115, 19],[117, 20],[119, 21],[121, 23],[123, 25],[125, 27],[126, 29],[127, 31],[128, 33],[128, 36],[127, 38],[126, 40],[124, 42],[122, 43],[120, 44],[118, 44],[115, 44],[113, 44],[110, 44],[108, 44],[106, 43],[104, 42],[102, 41],[100, 40],[98, 38],[97, 36],[96, 34],[97, 33]] },
+  { label:'\u79E6', yrs:'\u524D221\u2014\u524D207', color:'#8B2500',
+    desc:'\u59CB\u7687\u4E00\u7EDF\u516D\u56FD\uFF0C\u4E66\u540C\u6587\u8F66\u540C\u8F68\uFF0C\u7EDF\u4E00\u5EA6\u91CF\u8861\u3002\u5317\u7B51\u957F\u57CE\uFF0C\u5357\u5F81\u767E\u8D8A\uFF0C\u5EFA\u7ACB\u4E2D\u56FD\u7B2C\u4E00\u4E2A\u4E2D\u592E\u96C6\u6743\u5E1D\u56FD\u3002',
+    border:[[98, 34],[100, 32],[102, 30],[104, 28],[105, 26],[107, 24],[108, 22],[110, 21],[112, 20],[114, 20],[116, 20],[118, 21],[120, 22],[122, 24],[124, 26],[126, 28],[128, 31],[129, 34],[129, 36],[128, 38],[127, 40],[125, 42],[123, 43],[121, 44],[118, 44],[116, 44],[113, 44],[111, 44],[109, 44],[107, 43],[105, 42],[103, 41],[101, 40],[99, 39],[98, 38],[98, 37],[99, 35],[100, 33],[102, 32],[104, 31],[107, 31],[110, 31],[113, 31],[116, 31],[119, 30],[120, 29],[120, 27],[119, 25],[117, 24],[115, 24],[113, 24],[111, 24],[109, 24],[107, 24],[105, 24],[103, 24],[101, 25],[100, 27],[99, 29],[99, 31],[98, 34]] },
+  { label:'\u897F\u6C49', yrs:'\u524D202\u20148\u5E74', color:'#C8A951',
+    desc:'\u5218\u90A6\u5B9A\u90FD\u957F\u5B89\uFF0C\u6587\u666F\u4E4B\u6CBB\u79EF\u84C4\u56FD\u529B\u3002\u6C49\u6B66\u5E1D\u5317\u51FB\u5308\u5974\uFF0C\u5F00\u8F9F\u4E1D\u7EF8\u4E4B\u8DEF\uFF0C\u6C49\u6587\u5316\u5F71\u54CD\u4E1C\u4E9A\u4E24\u5343\u5E74\u3002',
+    border:[[98, 34],[100, 32],[101, 30],[102, 28],[103, 26],[105, 24],[107, 22],[109, 21],[111, 21],[113, 21],[115, 21],[117, 22],[119, 23],[121, 25],[123, 27],[126, 30],[128, 33],[130, 36],[131, 38],[130, 41],[129, 43],[127, 45],[125, 47],[122, 48],[119, 49],[116, 49],[113, 48],[110, 48],[107, 48],[104, 47],[101, 46],[98, 44],[95, 42],[92, 40],[90, 38],[88, 35],[86, 32],[86, 29],[87, 27],[88, 24],[90, 22],[92, 21],[94, 20],[96, 19],[98, 18],[100, 18],[102, 18],[104, 18],[106, 18],[108, 18],[110, 18],[112, 18],[107, 20],[104, 21],[102, 21],[100, 21],[98, 22],[97, 24],[96, 27],[96, 30],[97, 32],[98, 34]] },
+  { label:'\u4E1C\u6C49', yrs:'25\u2014220\u5E74', color:'#DAA520',
+    desc:'\u5149\u6B66\u4E2D\u5174\uFF0C\u5B9A\u90FD\u6D1B\u9633\u3002\u73ED\u8D85\u901A\u897F\u57DF\uFF0C\u5494\u4F26\u6539\u8FDB\u9020\u7EB8\u672F\uFF0C\u5F20\u8861\u53D1\u660E\u5730\u52A8\u4EEA\u3002\u5916\u621A\u5BA6\u5B98\u4E71\u653F\uFF0C\u9EC4\u5DFE\u8D77\u4E49\u7EC8\u7ED3\u5927\u6C49\u3002',
+    border:[[99, 34],[101, 32],[102, 30],[103, 28],[104, 26],[106, 24],[108, 22],[110, 21],[112, 21],[114, 21],[116, 21],[118, 22],[120, 23],[122, 25],[124, 27],[126, 30],[128, 33],[130, 36],[131, 38],[130, 41],[129, 43],[127, 45],[125, 47],[122, 48],[119, 49],[116, 49],[113, 48],[110, 48],[107, 48],[104, 47],[101, 46],[98, 44],[95, 42],[92, 40],[90, 38],[88, 35],[86, 32],[86, 29],[87, 27],[89, 25],[91, 23],[93, 22],[95, 21],[97, 20],[99, 19],[101, 19],[103, 19],[105, 19],[107, 19],[109, 19],[111, 19],[107, 21],[104, 22],[101, 22],[99, 22],[98, 24],[97, 27],[97, 30],[98, 32],[99, 34]] },
+  { label:'\u4E09\u56FD', yrs:'220\u2014280\u5E74', color:'#4A7C59',
+    desc:'\u9B4F\u8700\u5434\u4E09\u5206\u5929\u4E0B\u3002\u66F9\u64CD\u631F\u5929\u5B50\u4EE4\u8BF8\u4FAF\uFF0C\u8BF8\u845B\u4EAE\u9E92\u8EAC\u5C3D\u7840\uFF0C\u5B59\u6743\u636E\u5B88\u6C5F\u4E1C\u3002\u8D64\u58C1\u4E4B\u6218\u5960\u5B9A\u683C\u5C40\u3002',
+    border:[[98, 33],[100, 31],[102, 29],[104, 27],[106, 25],[108, 23],[110, 22],[112, 21],[114, 21],[116, 21],[118, 22],[120, 23],[122, 25],[124, 27],[126, 30],[127, 33],[127, 36],[126, 38],[125, 40],[123, 42],[121, 43],[118, 44],[115, 44],[112, 44],[109, 44],[106, 44],[103, 43],[100, 42],[97, 40],[94, 38],[92, 36],[90, 33],[90, 30],[91, 28],[92, 27],[94, 26],[96, 27],[97, 29],[97, 31],[98, 33]] },
+  { label:'\u4E24\u664B', yrs:'265\u2014420\u5E74', color:'#7B9EA6',
+    desc:'\u53F8\u9A6C\u708E\u77ED\u6682\u7EDF\u4E00\uFF0C\u516B\u738B\u4E4B\u4E71\uFF0C\u4E94\u80E1\u4E71\u534E\u3002\u4E1C\u664B\u504F\u5B89\u6C5F\u5DE6\uFF0C\u8863\u51A0\u5357\u6E21\uFF0C\u7559\u4E0B\u5170\u4EAD\u96C6\u5E8F\u7B49\u6587\u5316\u745E\u5B9D\u3002',
+    border:[[98, 33],[100, 31],[102, 29],[104, 27],[106, 25],[108, 23],[110, 22],[112, 21],[114, 21],[116, 21],[118, 22],[120, 23],[122, 25],[124, 27],[126, 30],[128, 33],[129, 36],[128, 39],[126, 41],[124, 43],[121, 44],[118, 45],[115, 45],[112, 45],[109, 44],[106, 44],[103, 43],[100, 42],[97, 40],[94, 38],[91, 36],[89, 33],[88, 30],[89, 27],[91, 26],[93, 25],[95, 25],[97, 26],[97, 29],[98, 31],[98, 33]] },
+  { label:'\u5357\u5317\u671D', yrs:'420\u2014589\u5E74', color:'#7B68EE',
+    desc:'\u5357\u5317\u5BF9\u5CD9\u767E\u4F59\u5E74\uFF0C\u4F5B\u6559\u5927\u5174\uFF0C\u4E91\u5188\u9F99\u95E8\u77F3\u7A9F\u5F00\u51FF\u3002\u5317\u9B4F\u5B5D\u6587\u5E1D\u6C49\u5316\u6539\u9769\uFF0C\u5357\u671D\u6587\u5B66\u969C\u7832\u3002',
+    border:[[88, 27],[90, 25],[92, 24],[94, 23],[96, 22],[98, 21],[100, 20],[102, 20],[104, 20],[106, 21],[108, 21],[110, 21],[112, 21],[114, 21],[116, 22],[118, 23],[120, 25],[122, 27],[124, 30],[126, 33],[128, 36],[129, 39],[127, 42],[124, 44],[121, 45],[118, 45],[115, 45],[112, 45],[109, 44],[106, 44],[103, 43],[100, 42],[97, 40],[93, 38],[90, 35],[87, 32],[85, 30],[85, 27],[87, 26],[88, 27]] },
+  { label:'\u968B', yrs:'581\u2014618\u5E74', color:'#FF7F50',
+    desc:'\u6768\u575A\u91CD\u65B0\u7EDF\u4E00\u4E2D\u56FD\uFF0C\u5F00\u521B\u79D1\u4E3E\u5236\u5EA6\u3002\u5927\u8FD0\u6CB3\u8D2F\u901A\u5357\u5317\uFF0C\u529F\u5728\u5343\u79CB\u3002\u4E8C\u4E16\u800C\u4EA1\uFF0C\u77ED\u6682\u800C\u8F89\u714C\u3002',
+    border:[[85, 27],[87, 25],[89, 23],[91, 22],[93, 21],[95, 20],[97, 19],[99, 19],[101, 19],[103, 19],[105, 19],[107, 19],[109, 20],[111, 20],[113, 21],[115, 21],[117, 22],[119, 23],[121, 25],[123, 28],[125, 31],[127, 34],[129, 37],[130, 40],[129, 43],[127, 46],[124, 48],[121, 49],[118, 50],[115, 50],[112, 50],[109, 49],[106, 49],[103, 48],[100, 47],[97, 45],[94, 43],[91, 41],[88, 38],[85, 35],[82, 32],[81, 29],[82, 27],[84, 26],[85, 27]] },
+  { label:'\u5510', yrs:'618\u2014907\u5E74', color:'#FF6B6B',
+    desc:'\u8D1E\u89C2\u4E4B\u6CBB\uFF0C\u5F00\u5143\u76DB\u4E16\uFF0C\u4E07\u90A6\u6765\u671D\u3002\u957F\u5B89\u4E3A\u4E16\u754C\u6700\u5927\u90FD\u5E02\uFF0C\u4E1D\u8DEF\u7E41\u76DB\u3002\u674E\u767D\u675C\u752B\u8BD7\u6587\u4F20\u4E16\uFF0C\u6587\u5316\u5149\u8000\u5343\u53E4\u3002',
+    border:[[76, 28],[78, 25],[80, 23],[82, 21],[84, 20],[86, 19],[88, 18],[90, 17],[92, 16],[94, 16],[96, 16],[98, 16],[100, 16],[102, 16],[104, 16],[106, 16],[108, 16],[110, 17],[112, 17],[114, 17],[116, 18],[118, 19],[120, 21],[122, 23],[124, 26],[126, 29],[128, 32],[130, 35],[132, 38],[133, 41],[132, 44],[130, 47],[127, 50],[124, 52],[120, 53],[116, 53],[112, 53],[108, 52],[104, 52],[100, 51],[96, 50],[92, 48],[88, 46],[84, 43],[80, 40],[77, 37],[75, 33],[74, 30],[75, 28],[76, 28]] },
+  { label:'\u4E94\u4EE3', yrs:'907\u2014960\u5E74', color:'#8FBC8F',
+    desc:'\u5510\u672B\u85E9\u9547\u5272\u636E\uFF0C\u4E94\u4EE3\u66F4\u8FED\u5982\u8D70\u9A6C\u706F\u3002\u5357\u65B9\u5341\u56FD\u76F8\u5BF9\u7A33\u5B9A\uFF0C\u7ECF\u6D4E\u6587\u5316\u5357\u79FB\uFF0C\u4E3A\u5B8B\u4EE3\u6C5F\u5357\u7E41\u8363\u5960\u5B9A\u57FA\u7840\u3002',
+    border:[[90, 26],[92, 25],[94, 24],[96, 23],[98, 22],[100, 21],[102, 20],[104, 20],[106, 20],[108, 21],[110, 21],[112, 21],[114, 21],[116, 22],[118, 23],[120, 25],[122, 27],[124, 30],[126, 33],[127, 36],[126, 38],[124, 40],[122, 42],[119, 43],[116, 44],[113, 44],[110, 44],[107, 43],[104, 42],[101, 41],[98, 39],[95, 37],[92, 34],[90, 31],[89, 29],[90, 26]] },
+  { label:'\u5B8B', yrs:'960\u20141279\u5E74', color:'#7ECFA0',
+    desc:'\u91CD\u6587\u8F7B\u6B66\uFF0C\u7ECF\u6D4E\u9AD8\u5EA6\u7E41\u8363\uFF0C\u6E05\u660E\u4E0A\u6CB3\u56FE\u63CF\u7ED8\u76DB\u4E16\u3002\u6D3B\u5B57\u5370\u5237\u3001\u6307\u5357\u9488\u3001\u706B\u836F\u4E09\u5927\u53D1\u660E\u4F20\u64AD\u4E16\u754C\u3002',
+    border:[[99, 26],[101, 24],[103, 22],[105, 21],[107, 21],[109, 21],[111, 21],[113, 21],[115, 22],[117, 23],[119, 24],[121, 26],[123, 29],[125, 32],[126, 35],[125, 38],[123, 40],[121, 42],[118, 43],[115, 44],[112, 44],[109, 44],[106, 43],[103, 42],[100, 41],[97, 39],[94, 37],[91, 34],[90, 31],[90, 29],[91, 27],[93, 26],[96, 25],[99, 26]] },
+  { label:'\u5143', yrs:'1271\u20141368\u5E74', color:'#87CEEB',
+    desc:'\u5FBD\u5FC5\u70C8\u5EFA\u5143\uFF0C\u7248\u56FE\u7A7A\u524D\u8FBD\u9614\uFF0C\u6A2A\u8DE8\u6B27\u4E9A\u3002\u9A6C\u53EF\u00B7\u6CE2\u7F57\u4E1C\u6765\uFF0C\u9A7F\u7AD9\u8FDE\u901A\u5929\u4E0B\u3002',
+    border:[[71, 20],[75, 17],[79, 15],[83, 13],[87, 12],[91, 11],[95, 11],[99, 11],[103, 11],[107, 11],[111, 11],[115, 12],[119, 13],[123, 14],[127, 16],[131, 19],[135, 22],[140, 26],[145, 30],[150, 34],[153, 38],[154, 42],[152, 46],[148, 50],[143, 53],[138, 55],[132, 56],[126, 56],[120, 56],[114, 55],[108, 54],[102, 53],[96, 52],[90, 50],[84, 48],[78, 46],[73, 43],[70, 39],[68, 35],[68, 30],[69, 26],[71, 20]] },
+  { label:'\u660E', yrs:'1368\u20141644\u5E74', color:'#FFB347',
+    desc:'\u6731\u5143\u748B\u9A71\u9010\u8499\u5143\uFF0C\u90D1\u548C\u4E03\u4E0B\u897F\u6D0B\uFF0C\u4E07\u91CC\u957F\u57CE\u6700\u7EC8\u6210\u578B\u3002\u664B\u660E\u79D1\u6280\u6587\u5316\u969C\u7832\uFF0C\u300A\u672C\u8349\u7EB2\u76EE\u300B\u95EE\u4E16\u3002',
+    border:[[98, 33],[100, 31],[101, 29],[102, 27],[104, 26],[105, 24],[107, 22],[109, 21],[111, 21],[113, 21],[115, 21],[117, 21],[119, 22],[121, 23],[123, 25],[125, 27],[127, 30],[129, 33],[130, 36],[130, 39],[129, 42],[127, 45],[124, 47],[121, 49],[118, 50],[115, 50],[112, 50],[109, 50],[106, 49],[103, 48],[100, 47],[97, 45],[94, 43],[91, 41],[89, 38],[87, 35],[85, 32],[84, 30],[85, 27],[87, 25],[89, 24],[91, 23],[93, 22],[95, 21],[97, 20],[99, 19],[101, 19],[103, 19],[105, 19],[107, 20],[109, 21],[107, 22],[105, 23],[103, 24],[101, 25],[100, 27],[99, 29],[98, 31],[98, 33]] },
+  { label:'\u6E05', yrs:'1644\u20141912\u5E74', color:'#DDA0DD',
+    desc:'\u5EB7\u96CD\u4E7E\u76DB\u4E16\uFF0C\u7586\u57DF\u8FBE1300\u4E07\u5E73\u65B9\u516C\u91CC\u3002\u95ED\u5173\u9501\u56FD\u9047\u5217\u5F3A\u575A\u8239\u5229\u70AE\uFF0C\u7CFB\u5217\u4E0D\u5E73\u7B49\u6761\u7EA6\uFF0C\u672B\u4EE3\u7687\u671D\u843D\u5E55\u3002',
+    border:[[73, 18],[77, 15],[81, 13],[85, 12],[89, 11],[93, 10],[97, 10],[101, 10],[105, 10],[109, 11],[113, 11],[117, 12],[121, 13],[125, 15],[129, 17],[133, 20],[136, 23],[138, 27],[140, 31],[141, 35],[140, 39],[138, 43],[135, 47],[131, 51],[126, 53],[120, 54],[114, 54],[108, 53],[102, 52],[96, 51],[90, 50],[84, 48],[79, 46],[75, 43],[72, 40],[70, 37],[69, 33],[69, 29],[70, 25],[71, 22],[73, 18]] },
+];
+
+// ============================================================
+// \u9057\u5740\u6570\u636E (22\u4E2A)
+// ============================================================
+var SITES = [{ name:'\u9A6C\u738B\u5806\u6C49\u5893',   coord:[113.02,28.21], era:'\u897F\u6C49',  type:'MUMMY',    mummy:'\u6E7F\u5C38', visitOk:true,  desc:'\u51FA\u571F\u897F\u6C49\u8D35\u65CF\u5973\u5C38\u8F9B\u8FBD\u592B\u4EBA\uFF0C2100\u4F59\u5E74\u4E0D\u8150\uFF0C\u5C38\u4F53\u76AE\u80A4\u5C1A\u6709\u5F39\u6027\u3002\u540C\u51FA\u5E1B\u4E66\u300A\u8001\u5B50\u300B\u3001\u5F69\u7ED8\u68FA\u69E7\u3001\u7D20\u7EB1\u812F\u8863\uFF0C\u662F\u4E2D\u56FD\u8003\u53E4\u53F2\u4E0A\u6700\u9707\u6495\u7684\u53D1\u73B0\u4E4B\u4E00\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u6E56\u5357\u7701\u535A\u7269\u9986\u00B7\u8F9B\u8FBD\u5893\u5C55\u5385\uFF0C\u8F9B\u8FBD\u9057\u4F53\u53CA\u6587\u7269\u5168\u5E74\u5F00\u653E' },
+{ name:'\u8346\u5DDE\u695A\u5893\u6E7F\u5C38', coord:[112.24,30.35], era:'\u6218\u56FD',  type:'MUMMY',    mummy:'\u6E7F\u5C38', visitOk:true,  desc:'\u8346\u5DDE\u7EAA\u5357\u57CE\u5468\u8FB9\u51FA\u571F\u591A\u5177\u6218\u56FD\u695A\u4EBA\u6E7F\u5C38\uFF0C\u300C\u8346\u5DDE\u7537\u5C38\u300D\u4FDD\u5B58\u5B8C\u6574\uFF0C\u76AE\u80A4\u67D4\u8F6F\uFF0C\u4F53\u5185\u5668\u5B98\u6E05\u6670\u53EF\u8FA8\u3002\u5357\u65B9\u9178\u6027\u571F\u58E4\u4E0E\u5BC6\u5C01\u68FA\u69E7\u5171\u540C\u9020\u5C31\u7684\u5343\u5E74\u5947\u8FF9\u3002',  visit:'\u300A\u53EF\u53C2\u89C2\u300B\u8346\u5DDE\u535A\u7269\u9986\u00B7\u695A\u6587\u5316\u5C55\u533A' },
+{ name:'\u5C0F\u6CB3\u516C\u4E3B\u5E72\u5C38', coord:[88.73,40.33],  era:'\u897F\u5468',  type:'MUMMY',    mummy:'\u5E72\u5C38', visitOk:false, desc:'\u6DF1\u85CF\u5854\u514B\u62C9\u739B\u5E72\u6C99\u6F20\u817F\u5730\uFF0C\u51FA\u571F\u6570\u767E\u5177\u6B27\u7F57\u5DF4\u4EBA\u79CD\u5E72\u5C38\uFF0C\u4EE5\u300C\u5C0F\u6CB3\u516C\u4E3B\u300D\u6700\u4E3A\u8457\u540D\u3002\u6781\u7AEF\u5E72\u71E5\u4F7F\u5C38\u4F53\u4FDD\u5B583800\u5E74\uFF0C\u968F\u846C\u6BDB\u7EC7\u7269\u8272\u5F69\u5982\u65B0\uFF0C\u63ED\u5F00\u697C\u5170\u6587\u660E\u4E4B\u8C1C\u3002',  visit:'\u9057\u5740\u4F4D\u4E8E\u7981\u533A\uFF0C\u4E0D\u5BF9\u5916\u5F00\u653E\u3002\u65B0\u7586\u535A\u7269\u9986\u53EF\u53C2\u89C2\u90E8\u5206\u6587\u7269' },
+{ name:'\u697C\u5170\u7F8E\u5973\u5E72\u5C38', coord:[89.55,40.50],  era:'\u897F\u6C49',  type:'MUMMY',    mummy:'\u5E72\u5C38', visitOk:false, desc:'\u697C\u5170\u53E4\u57CE\u51FA\u571F\uFF0C\u8DDD\u4ECA3800\u5E74\uFF0C\u4E94\u5B98\u7ACB\u4F53\u6E05\u6670\uFF0C\u68D5\u8272\u957F\u53D1\u4FDD\u5B58\u5B8C\u597D\u30021980\u5E74\u88AB\u53D1\u73B0\u8F70\u52A8\u5168\u7403\u3002\u9057\u5740\u4F4D\u4E8E\u519B\u4E8B\u7981\u533A\uFF0C\u300C\u697C\u5170\u7F8E\u5973\u300D\u73B0\u5B58\u65B0\u7586\u535A\u7269\u9986\u3002',  visit:'\u9057\u5740\u65E0\u6CD5\u8FDB\u5165\uFF0C\u697C\u5170\u7F8E\u5973\u5C55\u4E8E\u4E4C\u9C81\u6728\u9F50\u65B0\u7586\u535A\u7269\u9986' },
+{ name:'\u624E\u6EDA\u9C81\u514B\u5E72\u5C38', coord:[85.52,37.08],  era:'\u897F\u5468',  type:'MUMMY',    mummy:'\u5E72\u5C38', visitOk:false, desc:'\u65B0\u7586\u4E14\u672B\u53BF\u51FA\u571F\u5927\u91CF\u5E72\u5C38\uFF0C\u5E74\u4EE3\u8DE8\u8D763000\u5E74\uFF0C\u6709\u6B27\u7F57\u5DF4\u4E0E\u8499\u53E4\u4EBA\u79CD\u6DF7\u8840\u7279\u5F81\u3002\u51FA\u571F\u6BDB\u7EC7\u7269\u8272\u5F69\u8273\u4E3D\uFF0C\u53CD\u6620\u65E9\u671F\u4E1C\u897F\u65B9\u6587\u660E\u4EA4\u6D41\u3002',  visit:'\u4E14\u672B\u53BF\u535A\u7269\u9986\u53EF\u53C2\u89C2\u90E8\u5206\u6587\u7269\uFF0C\u9057\u5740\u5DF2\u56DE\u586B\u4FDD\u62A4' },
+{ name:'\u957F\u6C99\u4E1C\u6C49\u6E7F\u5C38', coord:[112.98,28.19],  era:'\u4E1C\u6C49',  type:'MUMMY',    mummy:'\u6E7F\u5C38', visitOk:true,  desc:'\u957F\u6C99\u4E94\u4E00\u5E7F\u573A\u65BD\u5DE5\u65F6\u51FA\u571F\u4E1C\u6C49\u6E7F\u5C38\u53CA\u5927\u6279\u7B80\u728D\uFF0C\u4FDD\u5B58\u6761\u4EF6\u4E0E\u9A6C\u738B\u5806\u7C7B\u4F3C\u3002\u7B80\u728D\u5185\u5BB9\u6D89\u53CA\u53F8\u6CD5\u6848\u4F8B\uFF0C\u662F\u7814\u7A76\u4E1C\u6C49\u57FA\u5C42\u884C\u653F\u7684\u73CD\u8D35\u53F2\u6599\u3002',  visit:'\u300A\u53EF\u53C2\u89C2\u300B\u957F\u6C99\u7B80\u728D\u535A\u7269\u9986\uFF0C\u7B80\u728D\u539F\u4EF6\u5C55\u793A' },
+{ name:'\u5949\u8282\u77BF\u5858\u5CE1\u60AC\u68FA', coord:[109.52,31.05], era:'\u6218\u56FD', type:'COFFIN',                    visitOk:true,  desc:'\u4E09\u5CE1\u77BF\u5858\u5CE1\u7EDD\u58C1\u4E0A\u60AC\u6302\u7684\u53E4\u68FA\uFF0C\u8DDD\u5730\u767E\u7C73\uFF0C\u5982\u4F55\u653E\u7F6E\u81F3\u4ECA\u662F\u8C1C\u3002\u4E3A\u5DF4\u4EBA\u5D16\u5893\uFF0C\u53D6\u300C\u6B7B\u540E\u767B\u5929\u300D\u4E4B\u610F\u3002\u4E09\u5CE1\u84C4\u6C34\u540E\u90E8\u5206\u8F6C\u79FB\u4FDD\u62A4\uFF0C\u73B0\u5B58\u8005\u4ECD\u9707\u64BC\u4EBA\u5FC3\u3002',  visit:'\u300A\u53EF\u8FDC\u89C2\u300B\u77BF\u5858\u5CE1\u6E38\u8239\u53EF\u8FDC\u89C2\u60AC\u68FA\uFF0C\u4E09\u5CE1\u535A\u7269\u9986\u6709\u4E13\u9898\u5C55\u89C8' },
+{ name:'\u73D9\u53BF\u50F0\u4EBA\u60AC\u68FA',   coord:[104.97,28.43], era:'\u660E',   type:'COFFIN',                    visitOk:true,  desc:'\u56DB\u5DDD\u73D9\u53BF\u9E84\u5858\u575D\u4FDD\u5B58\u4E2D\u56FD\u6700\u5B8C\u6574\u7684\u60AC\u68FA\u7FA4\uFF0C\u5B58\u68FA200\u4F59\u5177\uFF0C\u8DDD\u5730\u6700\u9AD8\u8FBE100\u7C73\u3002\u50F0\u4EBA\u795E\u79D8\u6D88\u5931\u4E8E\u660E\u4EE3\uFF0C\u60AC\u68FA\u662F\u5176\u7559\u7ED9\u4E16\u754C\u7684\u6700\u540E\u7B26\u53F7\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u73D9\u53BF\u50F0\u4EBA\u60AC\u68FA\u666F\u533A\uFF0C\u90E8\u5206\u6808\u9053\u53EF\u8FD1\u8DDD\u79BB\u89C2\u5BDF' },
+{ name:'\u6B66\u5937\u5C71\u8239\u68FA',     coord:[118.03,27.73], era:'\u6218\u56FD', type:'COFFIN',                    visitOk:true,  desc:'\u6B66\u5937\u5C71\u4E5D\u66F2\u6EAA\u5929\u6E38\u5CF0\u7EDD\u58C1\u4E0A\u60AC\u6302\u5F62\u5982\u5C0F\u8239\u7684\u53E4\u68FA\uFF0C\u4E3A\u95FD\u8D8A\u65CF\u5148\u6C11\u9057\u5B58\uFF0C\u8DDD\u4ECA3800\u4F59\u5E74\uFF0C\u662F\u4E2D\u56FD\u73B0\u77E5\u5E74\u4EE3\u6700\u65E9\u7684\u60AC\u68FA\u9057\u5B58\u4E4B\u4E00\u3002',  visit:'\u300A\u53EF\u8FDC\u89C2\u300B\u6B66\u5937\u5C71\u98CE\u666F\u533A\uFF0C\u4E58\u7AF9\u7B4F\u6C38\u6C14\u53EF\u8FDC\u89C2\u60AC\u68FA' },
+{ name:'\u9F99\u864E\u5C71\u5D16\u5893',     coord:[117.00,28.02], era:'\u6625\u79CB', type:'COFFIN',                    visitOk:true,  desc:'\u6C5F\u897F\u9E70\u6F6D\u9F99\u864E\u5C71\u4ED9\u6C34\u5CA9\u7EDD\u58C1\u4E0A\u5BC6\u5E03\u6625\u79CB\u6218\u56FD\u5D16\u5893\uFF0C\u68FA\u6728\u4EE5\u6574\u6728\u51FF\u5C31\uFF0C\u4E3A\u53E4\u8D8A\u4EBA\u4E60\u4FD7\u3002\u666F\u533A\u6709\u4E13\u95E8\u7684\u60AC\u68FA\u5F00\u68FA\u8868\u6F14\u5C55\u793A\uFF0C\u6781\u4E3A\u9707\u64BC\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u9F99\u864E\u5C71\u666F\u533A\u00B7\u4ED9\u6C34\u5CA9\u5D16\u5893\u535A\u7269\u9986\uFF0C\u6012\u68FA\u5F00\u68FA\u5C55\u793A\u8868\u6F14' },
+{ name:'\u660E\u5B9A\u9675\u5730\u5BAB',     coord:[116.22,40.30], era:'\u660E',   type:'PALACE',                    visitOk:true,  desc:'\u660E\u795E\u5B97\u6731\u7FCA\u9527\u4E0E\u4E24\u4F4D\u7687\u540E\u7684\u5730\u4E0B\u7384\u5BAB\uFF0C\u6DF1\u8FBE27\u7C73\uFF0C\u51715\u4E2A\u77F3\u5BA4\uFF0C\u603B\u9762\u79EF1195\u5E73\u65B9\u7C73\u3002\u8FC4\u4ECA\u4E2D\u56FD\u552F\u4E00\u4E3B\u52A8\u53D1\u6398\u5E76\u5BF9\u5916\u5F00\u653E\u7684\u5E1D\u738B\u5730\u5BAB\uFF0C\u51FA\u571F\u91D1\u51A0\u51E4\u51A0\u7389\u5668\u903E3000\u4EF6\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u660E\u5341\u4E09\u9675\u00B7\u5B9A\u9675\u535A\u7269\u9986\uFF0C\u5730\u5BAB\u5168\u5E74\u5F00\u653E\uFF0C\u53EF\u6B65\u5165\u53C2\u89C2\u4E94\u5927\u77F3\u5BA4' },
+{ name:'\u5357\u8D8A\u738B\u5893\u5730\u5BAB',   coord:[113.26,23.13], era:'\u897F\u6C49', type:'PALACE',                    visitOk:true,  desc:'\u5357\u8D8A\u56FD\u7B2C\u4E8C\u4EE3\u738B\u8D75\u7738\u4E4B\u5893\uFF0C\u51FA\u571F\u91D1\u7F15\u7389\u8863\u3001\u8C61\u7259\u3001\u94DC\u5668\u903E\u5343\u4EF6\u3002\u5893\u5BA4\u539F\u5740\u4FDD\u5B58\u5C55\u793A\uFF0C\u662F\u5CAD\u5357\u6700\u5927\u6C49\u4EE3\u5F69\u7ED8\u77F3\u5BA4\u5893\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u5E7F\u5DDE\u5357\u8D8A\u738B\u535A\u7269\u9662\uFF0C\u5730\u5BAB\u539F\u5740\u5168\u5E74\u5F00\u653E' },
+{ name:'\u5F90\u5DDE\u695A\u738B\u9675',     coord:[117.29,34.28], era:'\u897F\u6C49', type:'PALACE',                    visitOk:true,  desc:'\u897F\u6C49\u7B2C\u4E09\u4EE3\u695A\u738B\u5218\u621A\u7684\u5730\u4E0B\u5BAB\u6BBF\uFF0C\u51FF\u5C71\u4E3A\u9675\uFF0C\u5168\u957F117\u7C73\uFF0C17\u95F4\u77F3\u5BA4\u3002\u51FA\u571F\u91D1\u7F15\u7389\u88634\u4EF6\uFF0C\u300C\u9EC4\u80A0\u9898\u51D1\u300D\u846C\u5236\u4EE3\u8868\u4F5C\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u5F90\u5DDE\u6C49\u6587\u5316\u666F\u533A\u00B7\u72EE\u5B50\u5C71\u695A\u738B\u9675\uFF0C\u5730\u5BAB\u5168\u5E74\u5F00\u653E' },
+
+{ name:'\u4E7E\u9675\u00B7\u6B66\u5219\u5929',   coord:[108.19,34.58], era:'\u5510',   type:'PALACE_X',                  visitOk:false, desc:'\u5510\u9AD8\u5B97\u674E\u6CBB\u4E0E\u6B66\u5219\u5929\u5408\u846C\u9675\uFF0C\u81F3\u4ECA\u672A\u88AB\u53D1\u6398\u300061\u5C0A\u65E0\u5934\u77F3\u4EBA\u50CF\u795E\u79D8\u8033\u7ACB\uFF0C\u65E0\u5B57\u7891\u7559\u4E0B\u5343\u53E4\u8C1C\u9898\u3002',  visit:'\u5730\u5BAB\u672A\u5F00\u653E\uFF0C\u9675\u56ED\u5730\u9762\u666F\u533A\u53EF\u53C2\u89C2\u77F3\u4EBA\u50CF\u3001\u8FF0\u5723\u7EAA\u7891' },
+{ name:'\u4E09\u661F\u5806\u9057\u5740',     coord:[104.22,30.99], era:'\u897F\u5468', type:'BRONZE',                    visitOk:true,  desc:'\u53E4\u8700\u6587\u660E\u796D\u7940\u9057\u5740\uFF0C\u51FA\u571F\u9752\u94DC\u7EB5\u76EE\u9762\u5177\u3001\u9752\u94DC\u5927\u7ACB\u4EBA\u3001\u9752\u94DC\u795E\u6811\u3001\u9EC4\u91D1\u6743\u6756\uFF0C\u9020\u578B\u8BC6\u8C32\u795E\u79D8\uFF0C\u4E0E\u4E2D\u539F\u6587\u660E\u8FC2\u5F02\u30012021\u5E74\u65B0\u5751\u53D1\u6398\u518D\u5EA6\u9707\u60CA\u4E16\u754C\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u4E09\u661F\u5806\u535A\u7269\u9986\u65B0\u9986\uFF082023\u5E74\u5F00\u653E\uFF09' },
+{ name:'\u6BB7\u5DF1\u5987\u5A7D\u5893',     coord:[114.27,36.12], era:'\u897F\u5468', type:'BRONZE',                    visitOk:true,  desc:'\u5546\u738B\u6B66\u4E01\u4E4B\u59BB\u5987\u5A7D\u7684\u5893\u846C\uFF0C\u4E2D\u56FD\u9996\u4F4D\u6709\u6587\u5B57\u8BB0\u8F7D\u7684\u5973\u5C06\u519B\u3002\u51FA\u571F\u9752\u94DC\u5668468\u4EF6\u3001\u7389\u5668755\u4EF6\uFF0C\u8BC1\u5B9E\u7532\u9AA8\u6587\u8BB0\u8F7D\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u5B89\u9633\u6BB7\u5DF1\u535A\u7269\u9986\uFF0C\u5987\u5A7D\u5893\u539F\u5740\u5C55\u793A' },
+{ name:'\u66FE\u4FAF\u4E59\u7F16\u949F',     coord:[114.88,31.72], era:'\u6218\u56FD', type:'BRONZE',                    visitOk:true,  desc:'\u6218\u56FD\u66FE\u56FD\u56FD\u541B\u4E59\u7684\u5893\u846C\uFF0C\u51FA\u571F\u7F16\u949F65\u4EF6\u91CD2.5\u541E\uFF0C\u97F3\u57DF\u8DE8\u8D8A5\u4E2A\u516B\u5EA6\uFF0C\u53EF\u6F14\u594F\u73B0\u4EE3\u4E50\u66F2\u3002\u51FA\u571F\u65F6\u4ECD\u53EF\u6B63\u5E38\u6F14\u594F\uFF0C\u9707\u60CA\u5168\u7403\u97F3\u4E50\u754C\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u6E56\u5317\u7701\u535A\u7269\u9986\uFF0C\u66FE\u4FAF\u4E59\u7F16\u949F\u6709\u5B9A\u671F\u6F14\u594F\u8868\u6F14' },
+{ name:'\u91D1\u6C99\u9057\u5740',       coord:[104.05,30.71], era:'\u897F\u5468', type:'BRONZE',                    visitOk:true,  desc:'\u6210\u90FD\u53E4\u8700\u6587\u660E\u9057\u5740\uFF0C2001\u5E74\u65BD\u5DE5\u65F6\u5076\u7136\u53D1\u73B0\u3002\u51FA\u571F\u592A\u9633\u795E\u9E1F\u91D1\u7B94\uFF08\u4E2D\u56FD\u6587\u5316\u9057\u4EA7\u6807\u5FD7\uFF09\u3001\u5927\u91CF\u7389\u5668\u8C61\u7259\uFF0C\u662F\u4E09\u661F\u5806\u6587\u660E\u7684\u5343\u5E74\u5EF6\u7EED\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u6210\u90FD\u91D1\u6C99\u9057\u5740\u535A\u7269\u9986\uFF0C\u9057\u5740\u539F\u5740\u5C55\u793A\uFF0C\u53EF\u89C1\u8003\u53E4\u53D1\u6398\u73B0\u573A' },
+{ name:'\u6D77\u6615\u4FAF\u5893',       coord:[115.83,28.60], era:'\u897F\u6C49', type:'TREASURE',                  visitOk:true,  desc:'\u897F\u6C49\u5E9F\u5E1D\u5218\u8D3A\uFF08\u5728\u4F4D\u4EC727\u5929\uFF09\u7684\u5893\u846C\uFF0C\u51FA\u571F\u9A6C\u8E44\u91D1\u903E100\u4EF6\u3001\u94B1\u5E01\u8FD1200\u4E07\u679A\u3001\u7CBE\u7F8E\u6F06\u5668\u7389\u5668\uFF0C\u662F\u8FC4\u4ECA\u53D1\u6398\u4FDD\u5B58\u6700\u5B8C\u6574\u7684\u897F\u6C49\u5217\u4FAF\u5893\u56ED\u3002',  visit:'\u300A\u53EF\u6253\u5361\u300B\u5357\u660C\u6C49\u4EE3\u6D77\u6615\u4FAF\u56FD\u9057\u5740\u516C\u56ED\uFF0C\u4E3B\u5893\u5C55\u793A\u9986\u5F00\u653E\u53C2\u89C2' },
+{ name:'\u9C81\u8352\u738B\u5893', coord:[117.0,36.67], era:'\u660E', type:'PALACE', visitOk:true,
+    desc:'\u660E\u592A\u7956\u5341\u516D\u5B50\u9C81\u8352\u738B\u6731\u6A80\u7684\u5934\u7B49\u5E73\u85E9\u738B\u9675\uFF0C\u4F4D\u4E8E\u5C71\u4E1C\u90B9\u5DDE\u3002\u51FA\u571F\u5927\u91CF\u660E\u521D\u73CD\u8D35\u6587\u7269\uFF0C\u662F\u7814\u7A76\u660E\u521D\u85E9\u738B\u5236\u5EA6\u7684\u91CD\u8981\u5B9E\u7269\uFF0C\u968F\u846C\u54C1\u6709\u91D1\u51A0\u3001\u7389\u572D\u7B49\u7A00\u4E16\u73CD\u5B9D\u3002',
+    visit:'\u5DF2\u5F00\u653E\uFF0C\u4F4D\u4E8E\u5C71\u4E1C\u90B9\u57CE\u9C81\u8352\u738B\u9675\u666F\u533A\u3002' },
+{ name:'\u9C81\u8352\u738B\u5983\u5B50\u5893', coord:[117.02,36.65], era:'\u660E', type:'PALACE', visitOk:true,
+    desc:'\u9C81\u8352\u738B\u6731\u6A80\u5143\u5983\u6C64\u6C0F\u53CA\u4F8D\u5973\u6B89\u846C\u5893\u7FA4\uFF0C\u4E0E\u4E3B\u9675\u76F8\u90BB\u3002\u51FA\u571F\u4E1D\u7EC7\u54C1\u4FDD\u5B58\u5B8C\u597D\uFF0C\u4E3A\u660E\u4EE3\u670D\u9970\u7814\u7A76\u63D0\u4F9B\u4E86\u73CD\u8D35\u5B9E\u7269\u8D44\u6599\u3002',
+    visit:'\u4F4D\u4E8E\u5C71\u4E1C\u90B9\u57CE\u9C81\u8352\u738B\u9675\u666F\u533A\u5185\uFF0C\u968F\u4E3B\u9675\u5F00\u653E\u53C2\u89C2\u3002' },
+{ name:'\u5468\u5B9A\u738B\u5893', coord:[113.65,34.75], era:'\u660E', type:'PALACE', visitOk:true,
+    desc:'\u660E\u592A\u7956\u7B2C\u4E94\u5B50\u5468\u5B9A\u738B\u6731\u6A5A\u4E4B\u9675\uFF0C\u4F4D\u4E8E\u6CB3\u5357\u90D1\u5DDE\u3002\u6731\u6A5A\u66FE\u7F16\u64B0\u300A\u6551\u8352\u672C\u8349\u300B\uFF0C\u9675\u56ED\u5EFA\u5236\u5B8C\u6574\uFF0C\u662F\u660E\u4EE3\u4EB2\u738B\u5893\u4E2D\u4FDD\u5B58\u8F83\u597D\u7684\u4E00\u5EA7\u3002',
+    visit:'\u4F4D\u4E8E\u6CB3\u5357\u90D1\u5DDE\u8365\u9633\u5468\u5B9A\u738B\u9675\uFF0C\u5DF2\u5C40\u90E8\u5F00\u653E\u3002' },
+{ name:'\u9F9F\u5C71\u6C49\u5893', coord:[117.18,34.26], era:'\u897F\u6C49', type:'PALACE', visitOk:true,
+    desc:'\u897F\u6C49\u695A\u738B\u5218\u6CE8\u592B\u5987\u540C\u8314\u5F02\u7A74\u5893\uFF0C\u51FF\u5C71\u800C\u5EFA\uFF0C\u4E24\u6761\u5893\u9053\u7CBE\u5EA6\u8BEF\u5DEE\u4E0D\u8DB31\u5398\u7C73\uFF0C\u582A\u79F0\u6C49\u4EE3\u571F\u6728\u5DE5\u7A0B\u5947\u8FF9\u3002\u752C\u9053\u603B\u957F56\u7C73\uFF0C\u76F4\u901A\u5C71\u4F53\u6DF1\u5904\u3002',
+    visit:'\u5DF2\u5168\u9762\u5F00\u653E\uFF0C\u4F4D\u4E8E\u6C5F\u82CF\u5F90\u5DDE\u9F9F\u5C71\u666F\u533A\uFF0C\u53EF\u5165\u5730\u5BAB\u53C2\u89C2\u3002' },
+{ name:'\u8305\u6751\u6C49\u5893', coord:[117.22,34.18], era:'\u4E1C\u6C49', type:'PALACE', visitOk:true,
+    desc:'\u4E1C\u6C49\u665A\u671F\u5927\u578B\u753B\u50CF\u77F3\u5893\uFF0C\u77F3\u523B\u753B\u50CF\u5185\u5BB9\u4E30\u5BCC\uFF0C\u6DB5\u76D6\u5386\u53F2\u6545\u4E8B\u3001\u795E\u8BDD\u4F20\u8BF4\u3001\u5E84\u56ED\u751F\u6D3B\u7B49\uFF0C\u662F\u7814\u7A76\u4E1C\u6C49\u6C11\u4FD7\u4E0E\u827A\u672F\u7684\u4E00\u7EA7\u6587\u7269\u3002',
+    visit:'\u4F4D\u4E8E\u6C5F\u82CF\u5F90\u5DDE\u94DC\u5C71\u8305\u6751\uFF0C\u5DF2\u5BF9\u5916\u5F00\u653E\uFF0C\u5185\u6709\u5B8C\u6574\u753B\u50CF\u77F3\u5C55\u793A\u3002' },
+{ name:'\u8700\u738B\u9675', coord:[104.12,30.58], era:'\u660E', type:'PALACE', visitOk:true,
+    desc:'\u660E\u4EE3\u8700\u738B\u6731\u693F\u7CFB\u5217\u9675\u5BDD\uFF0C\u4F4D\u4E8E\u6210\u90FD\u5929\u56DE\u5C71\u3002\u5176\u4E2D\u50D6\u738B\u9675\u4FDD\u5B58\u6700\u4E3A\u5B8C\u6574\uFF0C\u51FA\u571F\u91D1\u7389\u5668\u7269\u7CBE\u7F8E\uFF0C2001\u5E74\u6B63\u5F0F\u53D1\u6398\uFF0C\u63ED\u5F00\u4E86\u8700\u738B\u5BB6\u65CF\u7684\u795E\u79D8\u9762\u7EB1\u3002',
+    visit:'\u6210\u90FD\u8700\u738B\u9675\u535A\u7269\u9986\u5DF2\u5F00\u653E\uFF0C\u53EF\u53C2\u89C2\u5730\u5BAB\u53CA\u51FA\u571F\u6587\u7269\u5C55\u3002' },
+{ name:'郝匠金墓', coord:[112.83,35.50], era:'金', type:'MURAL_TOMB', visitOk:false,
+    desc:'山西晋城郝匠一带发现的宋金时期高等级壁画砖雕墓，墓室结构完整，砖雕门楼、侍从仪仗与彩绘内容保存较好，能直观看到金代北方墓葬的空间布局与世俗生活审美。其震撼之处不在尸体，而在“地下宅邸”般的墓室仪式感。',
+    visit:'遗址以保护与研究为主，原墓通常不作常规下墓开放，相关资料与复制展示更适合参观。' },
+{ name:'太原郭行墓', coord:[112.49,37.84], era:'唐', type:'MURAL_TOMB', visitOk:false,
+    desc:'太原近年公布的重要唐代壁画墓，墓道与墓室壁画内容丰富，可见侍从、出行与生活场景，画风细腻，具有很强的晚唐墓葬视觉冲击力。它更像一座被封存于地下的绘画长廊。',
+    visit:'以考古保护为主，原址一般不作常规开放；可关注山西地区博物馆专题展与资料展示。' },
+{ name:'磁县北朝墓群', coord:[114.37,36.37], era:'南北朝', type:'MURAL_TOMB', visitOk:false,
+    desc:'河北磁县一带分布着东魏北齐时期高等级墓群，墓葬数量多、等级高，壁画、陶俑与墓制信息极具代表性，是理解北朝皇家与贵族墓葬体系的重要区域。它更适合作为“墓群型秘境”来读，而不是单一地宫点位。',
+    visit:'墓群整体以保护为主，部分成果可在邯郸、磁县相关展陈中了解，原址并非统一常规开放。' },
+{ name:'南唐二陵', coord:[118.67,31.86], era:'五代', type:'PALACE', visitOk:true,
+    desc:'南京南唐二陵位于祖堂山南麓，为南唐烈祖李昪钦陵与中主李璟顺陵合称。陵寝规制完整，地下空间与甬道结构清晰，是五代十国时期最具“可感知地宫气质”的王陵遗存之一。',
+    visit:'《可打卡》南京南唐二陵景区已开放参观，可近距离观看陵园遗存与地宫空间展示。' },
+{ name:'打虎亭汉墓', coord:[113.41,34.53], era:'东汉', type:'MURAL_TOMB', visitOk:false,
+    desc:'河南新密打虎亭汉墓常被称作“东汉第一大墓”，以大型画像石与墓室结构闻名。墓内内容涵盖宴饮、车马、乐舞、庖厨等题材，像一部压进石头里的东汉生活电影。它更偏视觉叙事型秘境，而不是可下探的开放地宫。',
+    visit:'原址以封护保存为主，常规下墓参观条件有限，相关内容多见于资料介绍与地方展陈。' },
+{ name:'印山越国王陵', coord:[120.54,29.93], era:'春秋', type:'TREASURE', visitOk:true,
+    desc:'绍兴印山越国王陵为春秋晚期大型高等级墓葬，封土规模宏大，常被认为与越王族系密切相关。它的魅力在于山体封土、王陵气势与越文化神秘感交织，是“王陵型秘境”的代表之一。',
+    visit:'《可打卡》位于绍兴兰亭一带，可结合印山遗址、越文化线路参观。' },
+{ name:'大葆台汉墓', coord:[116.29,39.81], era:'西汉', type:'PALACE', visitOk:true,
+    desc:'北京大葆台汉墓为西汉广阳顷王刘建及王后墓葬，以完整的黄肠题凑葬制闻名。地下结构展示性强，能直观看见汉代高等级王陵如何“以木构地下宫殿”来安置亡者，体验感很强。',
+    visit:'《可打卡》大葆台西汉墓遗址及相关展陈可参观，是北京看汉代地下葬制最直观的一站。' }
+  ,{ name:'法门寺地宫', coord:[107.89,34.52], era:'唐', type:'PALACE', visitOk:true,
+    desc:'唐代皇家地宫，封存佛指舍利千年。1987年开启后出土大批金银器与供奉器物，被誉为“地下佛国”，是最具传奇色彩的可入式地宫之一。',
+    visit:'《可打卡》陕西扶风法门寺景区，珍宝馆与地宫展示区开放' }
+  ,{ name:'秦始皇陵', coord:[109.28,34.38], era:'秦', type:'PALACE_X', visitOk:true,
+    desc:'中国历史上最宏大的帝陵，传说地宫内有水银江河与机关暗道。主体至今未发掘，笼罩巨大谜团，与兵马俑共同构成想象中的“地下帝国”。',
+    visit:'《可打卡》秦始皇帝陵博物院与陵区可参观，主地宫未开放' }
+  ,{ name:'殷墟', coord:[114.30,36.13], era:'商', type:'BRONZE', visitOk:true,
+    desc:'商王朝晚期都城遗址，王陵区、祭祀坑与甲骨文共同构成神秘而压迫感十足的地下世界。这里是青铜、占卜与王权交织的源头。',
+    visit:'《可打卡》安阳殷墟博物馆与宫殿宗庙遗址区' }
+  ,{ name:'妇好墓', coord:[114.31,36.12], era:'商', type:'TREASURE', visitOk:true,
+    desc:'殷墟王陵区唯一未被盗掘的完整商代墓葬。墓主人妇好既是王后也是女将军，出土青铜器、玉器与兵器数量惊人。',
+    visit:'《可打卡》安阳殷墟妇好墓展区' }
+  ,{ name:'雷峰塔地宫', coord:[120.15,30.23], era:'宋', type:'PALACE', visitOk:true,
+    desc:'雷峰塔下隐藏千年地宫，曾出土金棺银椁与佛教圣物。塔毁后重建过程中重见天日，是“塔下有地宫”最经典的一例。',
+    visit:'《可打卡》杭州雷峰塔景区，相关地宫文物可参观' }
+  ,{ name:'曾侯乙墓', coord:[113.37,31.70], era:'战国', type:'TREASURE', visitOk:true,
+    desc:'战国大型贵族墓葬，墓室分区清晰，地下空间布局完整。随葬编钟、青铜器与漆木器震惊世界，是墓室结构与文物密度都极强的一点。',
+    visit:'《可打卡》湖北省博物馆可看核心文物，原址受保护' }
+,{ name:'楼兰古城', coord:[89.68,40.50], era:'西汉', type:'PALACE_X', visitOk:false,
+    desc:'埋于风沙中的丝路失落古城，与楼兰美女干尸、枯骨、废弃佛塔共同构成荒凉而诡异的死亡景观。',
+    visit:'遗址位于保护区深处，常规游客难以进入，可在新疆相关博物馆了解文物' }
+  ,{ name:'海昏侯墓', coord:[115.88,28.68], era:'西汉', type:'TREASURE', visitOk:true,
+    desc:'西汉废帝刘贺之墓，金器数量惊人，墓园格局完整。考古发掘过程极具戏剧性，被视作近年最重要的汉墓发现之一。',
+    visit:'《可打卡》南昌海昏侯国遗址公园与博物馆' }
+,{ name:'敦煌藏经洞', coord:[94.80,40.03], era:'唐', type:'PALACE_X', visitOk:true,
+    desc:'莫高窟第17窟，被称为“藏经洞”，曾封存数万卷经书与文书。它更像一间被突然遗忘的密室，安静封闭了近千年。',
+    visit:'《可参观》敦煌莫高窟景区需预约，洞窟参观受限流管理' }
+  ,{ name:'西夏王陵', coord:[106.21,38.48], era:'西夏', type:'TREASURE', visitOk:true,
+    desc:'被称为“东方金字塔”的帝陵群，沙漠中的封土堆与未知地宫共同制造出极强的神秘感。西夏文明的许多秘密至今未完全揭开。',
+    visit:'《可打卡》宁夏银川西夏陵景区' }
+  ,{ name:'曹魏高平陵', coord:[112.45,34.70], era:'三国', type:'PALACE_X', visitOk:false,
+    desc:'传为魏明帝曹叡陵寝所在地，三国帝陵题材自带浓厚吸引力。关于其具体位置、结构与范围仍存在讨论。',
+    visit:'遗址保护中，暂无常规开放' }
+  ,{ name:'曲阜鲁王陵', coord:[116.98,35.60], era:'西汉', type:'PALACE_X', visitOk:true,
+    desc:'鲁国诸王高等级墓葬遗存，地下墓室结构明确，带有典型的诸侯王陵压迫感与封闭感。',
+    visit:'《可打卡》曲阜周边相关遗址区域，开放情况以现场为准' }
+  ,{ name:'马王堆三号墓', coord:[113.03,28.21], era:'西汉', type:'TREASURE', visitOk:true,
+    desc:'与辛追夫人墓同属马王堆汉墓体系，三号墓因出土帛书、地图与天文文献而格外特殊，像一间塞满知识与秘密的地下书库。',
+    visit:'《可打卡》湖南博物院可见马王堆相关珍贵文物' }
+,{ name:'茂陵', coord:[108.73,34.40], era:'西汉', type:'PALACE_X', visitOk:true,
+    desc:'汉武帝刘彻之陵，规模宏大，被称为“汉陵之最”。主地宫未发掘，关于内部结构与随葬品的想象极强。',
+    visit:'《可打卡》陕西茂陵博物馆与陵区，主地宫未开放' }
+  ,{ name:'永陵地宫', coord:[104.06,30.67], era:'五代', type:'PALACE', visitOk:true,
+    desc:'前蜀王建之墓，是少数可步入参观的帝王地宫之一。地下石室、棺床与石刻让人有非常直接的“下墓”体验。',
+    visit:'《可打卡》成都永陵博物馆，地宫开放' }
+  ,{ name:'昭陵', coord:[108.05,34.61], era:'唐', type:'PALACE_X', visitOk:true,
+    desc:'唐太宗李世民陵墓，依山为陵，主地宫未开启。庞大的陪葬墓群与昭陵六骏传说，为其增加了更多传奇色彩。',
+    visit:'《可打卡》昭陵景区，主地宫未开放' }
+  ,{ name:'桥陵', coord:[109.21,34.69], era:'唐', type:'PALACE_X', visitOk:true,
+    desc:'唐睿宗李旦陵墓，封土巨大，地宫未发掘。它与关中诸帝陵共同组成一条压迫感极强的地下皇陵带。',
+    visit:'《可打卡》桥陵遗址区域，开放情况以现场为准' }
+  ,{ name:'银雀山汉墓', coord:[118.35,35.05], era:'西汉', type:'TREASURE', visitOk:true,
+    desc:'以出土《孙子兵法》《孙膑兵法》竹简而闻名。墓室本身并非最巨大，但“从地下挖出失传兵书”的戏剧性非常强。',
+    visit:'《可打卡》临沂银雀山汉墓竹简博物馆' }
+  ,{ name:'满城汉墓', coord:[115.32,38.95], era:'西汉', type:'PALACE', visitOk:true,
+    desc:'中山靖王刘胜夫妇墓，山体开凿墓室，规模巨大，出土金缕玉衣震惊世界。是非常典型的“可以进入的汉代地下王墓”。',
+    visit:'《可打卡》河北满城汉墓景区，墓室展示开放' }
+  ,{ name:'狮子山楚王陵', coord:[117.20,34.25], era:'西汉', type:'PALACE', visitOk:true,
+    desc:'徐州楚王陵代表性遗址，山体内开凿大型墓室群，甬道与石室层层递进，地下迷宫感很强。',
+    visit:'《可打卡》徐州狮子山楚王陵景区' }
+  ,{ name:'北齐高润墓', coord:[114.49,36.61], era:'南北朝', type:'MURAL_TOMB', visitOk:false,
+    desc:'北齐高等级壁画墓，人物、仪仗与生活场景壁画保存精美，像一座被封存下来的地下长卷。',
+    visit:'遗址保护中，部分资料与文物可在相关博物馆了解' }
+,{ name:'武王墩墓', coord:[116.98,32.62], era:'战国', type:'TREASURE', visitOk:false,
+  desc:'近年发现的楚系高等级墓葬，规模宏大，地下结构仍在揭示中。',
+  visit:'发掘中，暂未开放' }
+
+,{ name:'六安汉代王陵墓地', coord:[116.52,31.75], era:'西汉', type:'PALACE_X', visitOk:false,
+  desc:'西汉王陵群，包含主墓与陪葬体系，地下结构完整。',
+  visit:'保护中，部分展陈' }
+
+];
+
+// ============================================================
+// \u4E1C\u4E9A\u9644\u5C5E\u56FD\u9057\u8FF9\uFF08\u9644\u52A0\uFF09
+// ============================================================
+var SITES_EXTRA = [
+  { name:'\u4E50\u6D6A\u53E4\u5893\u5824',  coord:[126.9,38.9],  era:'\u897F\u6C49', type:'PALACE',    visitOk:true,  flag:true,
+    desc:'\u671D\u9C9C\u5E73\u58E4\u4ED8\u8FD1\u53E4\u4EE3\u4E50\u6D6A\u90E1\u6CBF\u6C49\u5F0F\u5893\u7FA4\uFF0C\u51FA\u571F\u91D1\u7F55\u9171\u624B\u3001\u6F06\u5668\u3001\u9752\u94DC\u668A\u7B49\u6C49\u4EE3\u6587\u7269\uFF0C\u8BC1\u5B9E\u897F\u6C49\u5728\u671D\u9C9C\u534A\u5C9B\u5EFA\u7ACB\u90E1\u53BF\u7684\u5386\u53F2\u3002\u662F\u5F53\u65F6\u4E1C\u4E9A\u6700\u5927\u7684\u6C49\u5F0F\u6B96\u6C11\u5730\u5339\u914D\u9057\u5740\u3002',
+    visit:'\u671D\u9C9C\u5E73\u58E4\u671D\u9C9C\u4E2D\u592E\u5386\u53F2\u535A\u7269\u9986\u53EF\u770B\u51FA\u571F\u6587\u7269\u3002\uFF08\u671D\u9C9C\u5185\u6246\uFF0C\u9700\u7EC4\u56E2\u884C\uFF09' },
+  { name:'\u5434\u8D8A\u738B\u9675',  coord:[128.0,35.8],  era:'\u6218\u56FD', type:'BRONZE',    visitOk:true,  flag:true,
+    desc:'\u671D\u9C9C\u5E73\u58E4\u5357\u9053\u53E4\u5893\u5730\u533A\uFF0C\u51FA\u571F\u6218\u56FD\u65F6\u671F\u770B\u9752\u94DC\u56FE\u9A8A\u3001\u4E2D\u539F\u98CE\u683C\u9752\u94DC\u5668\uFF0C\u8BC1\u5B9E\u80E1\u590F\u5468\u671D\u594F\u5C5E\u66F1\u8D8A\u7684\u5386\u53F2\u3002',
+    visit:'\u671D\u9C9C\u5E73\u58E4\u51FA\u571F\u6587\u7269\u573A\u53EF\u53C2\u89C2\u3002\uFF08\u671D\u9C9C\u5185\u6246\u5730\uFF0C\u9700\u7EC4\u56E2\u884C\uFF09' },
+  { name:'\u9AD8\u53E5\u4E3D\u58C1\u753B\u5893', coord:[126.5,37.6],  era:'\u5357\u5317\u671D', type:'BRONZE', visitOk:true, flag:true,
+    desc:'\u671D\u9C9C\u53E4\u4EE3\u6B64\u56FD\u9AD8\u53E5\u4E3D\u738B\u671D\u7684\u5C71\u57CE\u4E0E\u58C1\u753B\u53E4\u5893\u7FA4\uFF0C\u88AB\u5217\u5165\u4E16\u754C\u6587\u5316\u9057\u4EA7\u3002\u58C1\u753B\u63CF\u7ED8\u5BBE\u5BB4\u3001\u730E\u730E\u3001\u6B4C\u821E\u573A\u666F\uFF0C\u8272\u5F69\u8273\u4E3D\u3002',
+    visit:'\u5DF2\u5217\u5165UNESCO\u4E16\u754C\u6587\u5316\u9057\u4EA7\u3002\u671D\u9C9C\u5185\u6246\uFF0C\u9700\u7EC4\u56E2\u884C\u3002' },
+  { name:'\u5434\u8D8A\u5256\u7B26\u9EDE',  coord:[135.8,34.7],  era:'\u897F\u6C49',  type:'BRONZE', visitOk:true, flag:true,
+    desc:'\u65E5\u672C\u5947\u8FB9\u5730\u533A\u300C\u5609\u795E\u5C71\u53E4\u575F\u5171\u540C\u4F53\u300D\uFF0C\u4FDD\u5B5823\u5EA7\u53E4\u5938\uFF0C\u51FA\u571F\u9752\u94DC\u6D45\u987E\u7B26\u3001\u524D\u6C49\u5F0F\u9509\u9540\u7B49\uFF0C\u5730\u4F4D\u7CFB\u5F18\u751F\u97E9\u534E\u6587\u5316\u5F71\u54CD\u3002',
+    visit:'\u300A\u53EF\u6253\u5361\u300B\u65E5\u672C\u8FBA\u8CB4\u7E01\u7E04\u53E4\u575F\u516C\u5712\uFF0C\u5168\u5E74\u5F00\u653E' },
+  { name:'\u5434\u5357\u738B\u5883',   coord:[105.8,22.9],  era:'\u6C49',       type:'PALACE',    visitOk:true, flag:true,
+    desc:'\u8D8A\u5357\u5317\u90E8\u8463\u8FFD\u5C71\u7701\u51FA\u571F\u4E1C\u6C49\u8D8A\u5730\u7EDF\u6CBB\u8005\u50A7\u5740\uFF0C\u968F\u846C\u6C49\u5F0F\u540C\u5FC3\u5706\u74A6\u3001\u9752\u94DC\u9F13\u7B49\u6587\u7269\uFF0C\u8BC1\u660E\u4E1C\u6C49\u5728\u8D8A\u5357\u7684\u5C01\u5C71\u4E0E\u5F71\u54CD\u3002',
+    visit:'\u300A\u53EF\u53C2\u89C2\u300B\u8D8A\u5357\u5317\u90E8\u535A\u7269\u9986\u53EF\u770B\u975E\u8FBF\u5C55\u793A\u3002' },
+];
+
+// ============================================================
+// \u8FC1\u5F99\u8DEF\u7EBF
+// ============================================================
+var ROUTES = [
+  { name:'\u4E1D\u7EF8\u4E4B\u8DEF',   coords:[[104.05,30.71],[107.80,34.55],[109.27,34.38],[108.19,34.58],[100,38],[90,40],[88.73,40.33],[89.55,40.50]], color:'#FFD700' },
+  { name:'\u695A\u6587\u5316\u8D70\u5ECA', coords:[[112.24,30.35],[113.02,28.21],[114.88,31.72],[115.83,28.60]], color:'#9B59B6' },
+  { name:'\u8700\u9053\u6587\u660E',   coords:[[104.22,30.99],[104.05,30.71],[109.52,31.05],[104.97,28.43]], color:'#00CED1' },
+];
+
+var ERA_MATCH = {
+  '西周':['西周','商'],'春秋':['春秋'],'战国':['战国'],'秦':['秦'],
+  '西汉':['西汉','汉'],'东汉':['东汉','汉'],'三国':['三国'],'两晋':['两晋','晋'],
+  '南北朝':['南北朝'],'隋':['隋'],'唐':['唐'],'五代':['五代'],
+  '宋':['宋','金','西夏','南宋'],'元':['元'],'明':['明'],'清':['清'],
+};
+
+// ============================================================
+// \u72B6\u6001
+// ============================================================
+var chart = null;
+var currentEra = '全部';
+var activeFilters = { routes:false, MUMMY:true, COFFIN:true, PALACE:true, PALACE_X:true, BRONZE:true, TREASURE:true, MURAL_TOMB:true, extra:true };
+
+// ============================================================
+// \u671D\u4EE3\u4FA7\u8FB9\u680F
+// ============================================================
+var eraListEl = document.getElementById('era-list');
+ERAS.forEach(function(era) {
+  var btn = document.createElement('button');
+  btn.className = 'era-btn' + (era.label === currentEra ? ' active' : '');
+  btn.id = 'era-btn-' + era.label;
+  btn.innerHTML = era.label + '<span class="yr">' + era.yrs.split('\u2014')[0] + '</span>';
+  if (era.label === currentEra) { btn.style.color = era.color; btn.style.borderLeftColor = era.color; }
+  btn.addEventListener('click', function() { switchEra(era.label); });
+  eraListEl.appendChild(btn);
+});
+
+// 全部按钮（插在列表最后，视觉上可移最前——这里加在循环后让它最底部）
+var allBtn = document.createElement('button');
+allBtn.id = 'era-btn-all';
+allBtn.className = 'era-btn';
+allBtn.innerHTML = '全<br>部<span class="yr">全朝</span>';
+allBtn.addEventListener('click', function() { switchEra('全部'); });
+eraListEl.insertBefore(allBtn, eraListEl.firstChild);
+
+// ============================================================
+// \u9057\u5740\u56FE\u4F8B
+// ============================================================
+var legendEl = document.getElementById('legend-items');
+
+function renderLegend() {
+  legendEl.innerHTML = '';
+  var allSites = SITES.concat(SITES_EXTRA);
+  // 只显示当前 activeFilters 开启的类型
+  var shown = allSites.filter(function(s) { return activeFilters[s.type]; });
+  if (shown.length === 0) {
+    var empty = document.createElement('div');
+    empty.style.cssText = 'color:rgba(200,169,81,.3);font-size:10px;padding:4px 2px;';
+    empty.textContent = '暂无遗址';
+    legendEl.appendChild(empty);
+    return;
+  }
+  shown.forEach(function(site) {
+    var tc = TYPES[site.type].color;
+    var row = document.createElement('div');
+    row.className = 'li';
+    row.innerHTML = '<div class="ld" style="background:' + tc + ';box-shadow:0 0 4px ' + tc + '"></div>'
+      + '<span class="ln">' + site.name + '</span>';
+    row.addEventListener('click', function() { showPanel(site); });
+    legendEl.appendChild(row);
+  });
+}
+renderLegend();
+
+// ============================================================
+// \u671D\u4EE3\u5E95\u680F
+// ============================================================
+function updateEraBar(era) {
+  document.getElementById('era-bar-strip').style.background = era.color;
+  var nm = document.getElementById('era-bar-name');
+  nm.textContent = era.label;
+  nm.style.color = era.color;
+  document.getElementById('era-bar-yrs').textContent = era.yrs;
+  document.getElementById('era-bar-desc').textContent = era.desc;
+}
+
+// ============================================================
+// \u8BE6\u60C5\u9762\u677F
+// ============================================================
+function closePanel() {
+  document.getElementById('panel').classList.remove('show');
+}
+
+function showPanel(site) {
+  var t = TYPES[site.type];
+  var tc = t.color;
+  var p = document.getElementById('panel');
+  p.style.border = '1px solid ' + tc;
+  p.style.boxShadow = '0 0 20px ' + tc + '40';
+  var tm = document.getElementById('panel-typemark');
+  tm.textContent = '[ ' + t.label + ' ]';
+  tm.style.cssText = 'font-size:10px;letter-spacing:.1em;margin-bottom:5px;padding:2px 7px;border-radius:3px;display:inline-block;color:' + tc + ';background:' + tc + '18;border:1px solid ' + tc + '44';
+  document.getElementById('panel-dot').style.cssText = 'width:10px;height:10px;border-radius:50%;flex-shrink:0;background:' + tc + ';box-shadow:0 0 7px ' + tc;
+  document.getElementById('panel-name').textContent = site.name;
+  document.getElementById('panel-name').style.cssText = 'font-size:clamp(14px,1.6vw,18px);font-weight:normal;letter-spacing:.1em;color:' + tc;
+  var badges = document.getElementById('panel-badges');
+  badges.innerHTML = '';
+  function addBadge(txt, c, bg) {
+    var b = document.createElement('span'); b.className = 'pbadge'; b.textContent = txt;
+    b.style.cssText = 'color:' + c + ';background:' + bg + ';border:1px solid ' + c + '44';
+    badges.appendChild(b);
+  }
+  addBadge(site.era, '#C8A951', 'rgba(200,169,81,.1)');
+  if (site.mummy) {
+    var ma = getMummyAccent(site.mummy);
+    addBadge(ma.tag, ma.color, ma.bg);
+  }
+  if (site.flag)  addBadge('\u4ED8\u5C5E\u56FD\u9057\u8FF9', '#87CEEB', 'rgba(135,206,235,.1)');
+  if (site.visitOk) addBadge('\u53EF\u6253\u5361\u53C2\u89C2', '#52C41A', 'rgba(82,196,26,.1)');
+  else              addBadge('\u66AB\u672A\u5BF9\u5916\u5F00\u653E', '#888', 'rgba(120,120,120,.1)');
+  document.getElementById('panel-desc').innerHTML = '<span style="word-break:break-all;white-space:normal;display:block">' + (site.desc||'') + '</span>';
+  var ve = document.getElementById('panel-visit');
+  if (site.visit) {
+    ve.textContent = site.visit;
+    ve.style.cssText = 'margin-top:8px;padding:6px 9px;border-radius:5px;font-size:9.5px;line-height:1.7;'
+      + 'background:' + (site.visitOk ? 'rgba(82,196,26,.07)' : 'rgba(120,120,120,.07)') + ';'
+      + 'border:1px solid ' + (site.visitOk ? 'rgba(82,196,26,.28)' : 'rgba(120,120,120,.25)') + ';'
+      + 'color:' + (site.visitOk ? '#8BC34A' : '#888');
+  } else { ve.textContent = ''; ve.style.cssText = ''; }
+  document.getElementById('panel-coord').textContent = '\u5750\u6807: ' + site.coord[0] + '\u00B0E  ' + site.coord[1] + '\u00B0N';
+  document.getElementById('panel-coord').style.borderTop = '1px solid ' + tc + '20';
+  p.classList.add('show');
+}
+document.getElementById('panel-close').addEventListener('click', function() {
+  document.getElementById('panel').classList.remove('show');
+});
+
+// ============================================================
+// \u8FC7\u6EE4\u5668\u5F00\u5173\uFF08\u7C7B\u578B + \u8FDE\u7EBF\uFF09
+// ============================================================
+function toggleFilter(key) {
+  var btn = document.getElementById('btn-' + key);
+  if (key === 'routes') {
+    activeFilters.routes = !activeFilters.routes;
+    btn.classList.toggle('on', activeFilters.routes);
+    btn.textContent = activeFilters.routes ? '\u25C8 \u9690\u85CF\u8FDE\u7EBF' : '\u25C8 \u4E1D\u8DEF\u8FDE\u7EBF';
+  } else {
+    activeFilters[key] = !activeFilters[key];
+    btn.classList.toggle('on', activeFilters[key]);
+    btn.style.color = activeFilters[key] ? TYPES[key].color : 'rgba(200,169,81,.35)';
+  }
+  if (chart) renderChart();
+  renderLegend();
+}
+
+// ============================================================
+// \u5207\u6362\u671D\u4EE3
+// ============================================================
+
+// ============================================================
+// 搜索功能
+// ============================================================
+
+function getMummyAccent(m) {
+  if (m === '湿尸') return { color:'#87CEEB', bg:'rgba(135,206,235,.15)', tag:'湿尸·高保存', tip:'特征：湿尸（软组织保存较完整）' };
+  if (m === '干尸') return { color:'#F4A460', bg:'rgba(244,164,96,.15)', tag:'干尸·自然脱水', tip:'特征：干尸（自然脱水保存）' };
+  if (m === '鞣尸') return { color:'#98FB98', bg:'rgba(152,251,152,.15)', tag:'鞣尸·特殊处理', tip:'特征：鞣尸（经特殊处理保存）' };
+  return { color:'#E0B0FF', bg:'rgba(224,176,255,.15)', tag:m, tip:'特征：' + m };
+}
+
+var searchHighlight = [];
+
+function clearSearch() {
+  var input = document.getElementById('search-input');
+  input.value = '';
+  doSearch('');
+  input.focus();
+}
+
+function doSearch(val) {
+  var box = document.getElementById('search-results');
+  val = val.trim();
+  if (!val) { box.classList.remove('show'); box.innerHTML = ''; searchHighlight = []; if(chart) renderChart(); return; }
+
+  var allS = SITES.concat(SITES_EXTRA);
+  var results = allS.filter(function(s) {
+    return s.name.indexOf(val) >= 0
+      || s.era.indexOf(val) >= 0
+      || (s.desc && s.desc.indexOf(val) >= 0);
+  });
+
+  searchHighlight = results.map(function(s){ return s.name; });
+  if (chart) renderChart();
+
+  box.innerHTML = '';
+  if (results.length === 0) {
+    box.innerHTML = '<div class="sr-empty">未找到「' + val + '」相关遗址</div>';
+  } else {
+    results.forEach(function(s) {
+      var tc = TYPES[s.type].color;
+      var div = document.createElement('div');
+      div.className = 'sr-item';
+      div.innerHTML = '<div class="sr-name"><span style="color:'+tc+';margin-right:5px">●</span>' + s.name + '</div>'
+        + '<div class="sr-meta">' + s.era + ' · ' + TYPES[s.type].label + '</div>';
+      div.onclick = function() {
+        showPanel(s);
+        searchHighlight = [s.name];
+        document.getElementById('search-input').value = s.name;
+        box.classList.remove('show');
+        if (chart) renderChart();
+      };
+      box.appendChild(div);
+    });
+  }
+  box.classList.add('show');
+}
+
+function hideSearch() {
+  document.getElementById('search-results').classList.remove('show');
+}
+
+function switchEra(label) {
+  document.getElementById('panel').classList.remove('show');
+  // 清除所有按钮高亮（包括全部按钮）
+  ERAS.forEach(function(e) {
+    var btn = document.getElementById('era-btn-' + e.label);
+    if (!btn) return;
+    btn.classList.remove('active'); btn.style.color = ''; btn.style.borderLeftColor = '';
+  });
+  var allB = document.getElementById('era-btn-all');
+  if (allB) { allB.classList.remove('active'); allB.style.color=''; allB.style.borderLeftColor=''; }
+
+  if (label === '全部') {
+    if (allB) { allB.classList.add('active'); allB.style.color='#C8A951'; allB.style.borderLeftColor='#C8A951'; }
+    currentEra = '全部';
+    updateEraBar({label:'全部', color:'#C8A951', yrs:'全朝代', desc:'华夏千年，万墳墓迹，一图尽览。'});
+    if (chart) renderChart();
+    renderLegend();
+    return;
+  }
+  ERAS.forEach(function(e) {
+    var btn = document.getElementById('era-btn-' + e.label);
+    if (!btn) return;
+    if (e.label === label) { btn.classList.add('active'); btn.style.color = e.color; btn.style.borderLeftColor = e.color; }
+  });
+  currentEra = label;
+  updateEraBar(ERAS.find(function(e) { return e.label === label; }));
+  if (chart) renderChart();
+  renderLegend();
+}
+
+// ============================================================
+// \u6E32\u67D3\u56FE\u8868
+// ============================================================
+function renderChart() {
+  var eraInfo = currentEra==='全部' ? {label:'全部',color:'#C8A951',yrs:'',desc:''} : ERAS.find(function(e){return e.label===currentEra;});
+  var borderCoords = eraInfo.border || [];
+  var activeDyn = (function(){
+    if (currentEra!=='全部') return ERA_MATCH[currentEra]||[currentEra];
+    var all=[];
+    ERAS.forEach(function(e){all.push(e.label);});
+    Object.keys(ERA_MATCH).forEach(function(k){
+      ERA_MATCH[k].forEach(function(v){if(all.indexOf(v)<0)all.push(v);});
+    });
+    return all;
+  })();
+
+  // \u5F53\u524D\u671D\u4EE3\u6D3B\u8DC3\u9057\u5740\uFF08\u5408\u5E76\u4E3B+\u9644\u52A0\uFF09
+  var allSites = SITES.concat(SITES_EXTRA);
+  var visibleSites = searchHighlight.length > 0
+    ? allSites.filter(function(s) { return searchHighlight.indexOf(s.name) >= 0; })
+    : allSites.filter(function(s) { return activeFilters[s.type]; });
+  var activeSites = visibleSites.filter(function(s) { return searchHighlight.length > 0 || activeDyn.indexOf(s.era) >= 0; });
+
+  var series = [];
+
+  // \u8FDE\u7EBF\u8DEF\u7EBF
+  if (activeFilters.routes) {
+    ROUTES.forEach(function(r) {
+      series.push({
+        name:r.name, type:'lines', coordinateSystem:'geo', zlevel:3,
+        effect:{ show:true, period:4, trailLength:.6, symbolSize:5, color:r.color },
+        lineStyle:{ color:r.color, width:1.5, opacity:.45, curveness:.2, shadowColor:r.color, shadowBlur:8 },
+        data: r.coords.slice(0,-1).map(function(c,i) { return { coords:[c,r.coords[i+1]] }; }),
+      });
+    });
+  }
+
+  // \u6240\u6709\u53EF\u89C1\u9057\u5740\uFF08\u975E\u5F53\u671D\u7070\u663E\uFF09
+  if (visibleSites.length > 0) {
+    series.push({
+      name:'sites', type:'scatter', coordinateSystem:'geo', zlevel:4, clip:false,
+      data: visibleSites.map(function(s) {
+        var active = activeDyn.indexOf(s.era) >= 0;
+        var tc = TYPES[s.type].color;
+        return { name:s.name, value:s.coord, itemStyle:{ color: active ? tc : 'rgba(70,55,40,0.2)' } };
+      }),
+      symbolSize: function(val, params) {
+        var s = visibleSites[params.dataIndex];
+        if (searchHighlight.length > 0 && searchHighlight.indexOf(s.name) >= 0) return 12;
+        if (s.type === 'MURAL_TOMB') return activeDyn.indexOf(s.era) >= 0 ? 6 : 4;
+        if (s.type === 'MUMMY' && s.mummy === '湿尸') return activeDyn.indexOf(s.era) >= 0 ? 8 : 5;
+        if (s.type === 'MUMMY' && s.mummy === '干尸') return activeDyn.indexOf(s.era) >= 0 ? 7 : 4;
+        return activeDyn.indexOf(s.era) >= 0 ? 7 : 4;
+      },
+      label: { show:false },
+    });
+  }
+
+  // \u5F53\u671D\u9057\u5740\u6D9F\u6F2A
+  if (activeSites.length > 0) {
+    series.push({
+      name:'active', type:'effectScatter', coordinateSystem:'geo', zlevel:5, clip:false,
+      data: activeSites.map(function(s) {
+        return { name:s.name, value:s.coord, itemStyle:{ color:TYPES[s.type].color } };
+      }),
+      symbolSize:function(val, params){
+        var s = activeSites[params.dataIndex];
+        if (s && s.type === 'MURAL_TOMB') return 8;
+        if (s && s.type === 'MUMMY' && s.mummy === '湿尸') return 11;
+        return 10;
+      },
+      rippleEffect:{ brushType:'stroke', scale:3, period:2.2 },
+      label:{
+        show:true, formatter:'{b}', position:'right',
+        color:'#FFD700', fontSize:12, fontWeight:'bold',
+        fontFamily:'STKaiti,KaiTi,serif',
+        textShadowColor:'rgba(0,0,0,.9)', textShadowBlur:5,
+      },
+    });
+  }
+
+  chart.setOption({
+    backgroundColor:'#000814',
+    tooltip:{
+      trigger:'item', backgroundColor:'rgba(0,0,0,.92)', borderColor:'#C8A951', borderWidth:1,
+      textStyle:{ color:'#F5DEB3', fontSize:12 },
+      formatter: function(params) {
+        if (params.seriesName === 'sites' || params.seriesName === 'active') {
+          var allS = SITES.concat(SITES_EXTRA);
+          var s = null;
+          for (var i=0; i<allS.length; i++) { if (allS[i].name === params.name) { s = allS[i]; break; } }
+          if (!s) return '';
+          var tc = TYPES[s.type].color;
+          return '<div style="max-width:220px;word-break:break-all;white-space:normal">'
+            + '<b style="color:' + tc + ';font-size:14px">' + s.name + '</b><br>'
+            + '<span style="color:#999;font-size:10px">' + TYPES[s.type].label + ' \u00B7 ' + s.era
+            + (s.mummy ? ' \u00B7 ' + s.mummy : '')
+            + (s.flag ? ' \u00B7 \u4ED8\u5C5E\u56FD' : '') + '</span><br>'
+            + '<span style="font-size:11px;line-height:1.6">' + s.desc.substring(0,55) + '...</span><br>'
+            + '<span style="color:' + (s.visitOk ? '#8BC34A' : '#777') + ';font-size:10px">'
+            + (s.visitOk ? '[ \u53EF\u6253\u5361 ]' : '[ \u66AB\u672A\u5F00\u653E ]') + '</span>'
+            + '</div>';
+        }
+        return '';
+      }
+    },
+    geo:{
+      map:'china', roam:true, zoom:1.15, center:[104,37],
+      itemStyle:{ areaColor:'#1a1208', borderColor:'#C8A951', borderWidth:.75, shadowColor:'rgba(200,169,81,.12)', shadowBlur:8 },
+      emphasis:{ itemStyle:{ areaColor:'#2d2010', borderColor:'#FFD700', borderWidth:1.3 }, label:{ show:false } },
+      label:{ show:false },
+    },
+    series: series,
+  }, true);
+  renderExtraPanel();
+}
+
+// ============================================================
+// 境外遗迹卡片面板
+// ============================================================
+var extraOpen = false;
+function toggleExtraPanel() {
+  extraOpen = !extraOpen;
+  var b = document.getElementById('extra-body');
+  var a = document.getElementById('extra-toggle-arrow');
+  if (extraOpen) { b.classList.remove('collapsed'); a.innerHTML = '&#10094;'; }
+  else { b.classList.add('collapsed'); a.innerHTML = '&#10095;'; }
+}
+function renderExtraPanel() {
+  var body = document.getElementById('extra-body');
+  var empty = document.getElementById('extra-empty');
+  var activeDyn;
+  if (currentEra === '全部') {
+    // 包含所有朝代标签 + ERA_MATCH 里的别名（如"汉"）
+    activeDyn = [];
+    ERAS.forEach(function(e) { activeDyn.push(e.label); });
+    Object.keys(ERA_MATCH).forEach(function(k) {
+      ERA_MATCH[k].forEach(function(v) { if (activeDyn.indexOf(v) < 0) activeDyn.push(v); });
+    });
+  } else {
+    activeDyn = ERA_MATCH[currentEra] || [currentEra];
+  }
+  var matched = SITES_EXTRA.filter(function(s) { return activeDyn.indexOf(s.era) >= 0; });
+  body.querySelectorAll('.extra-card').forEach(function(c) { c.parentNode.removeChild(c); });
+  if (matched.length === 0) {
+    empty.style.display = 'block';
+    if (extraOpen) {
+      extraOpen = false;
+      document.getElementById('extra-body').classList.add('collapsed');
+      document.getElementById('extra-toggle-arrow').innerHTML = '&#10095;';
+    }
+    return;
+  }
+  empty.style.display = 'none';
+  matched.forEach(function(s) {
+    var card = document.createElement('div');
+    card.className = 'extra-card';
+    card.innerHTML =
+      '<div class="extra-card-header">'
+      + '<span class="extra-card-name">' + s.name + '</span>'
+      + '<span class="extra-card-era">' + s.era + '</span>'
+      + '<span class="extra-card-badge">\u5883\u5916</span>'
+      + '</div>'
+      + '<div class="extra-card-desc">' + s.desc + '</div>'
+      + (s.visit ? '<div class="extra-card-visit">&#9654; ' + s.visit + '</div>' : '');
+    body.appendChild(card);
+  });
+  // 仅在非手机端自动展开；竖屏手机默认保持折叠，避免挡住地图
+  if (!extraOpen && !isMobilePortrait) {
+    extraOpen = true;
+    document.getElementById('extra-body').classList.remove('collapsed');
+    document.getElementById('extra-toggle-arrow').innerHTML = '&#10094;';
+  }
+}
+
+// ============================================================
+// \u70B9\u51FB\u9057\u5740
+// ============================================================
+function handleSiteClick(name) {
+  var allS = SITES.concat(SITES_EXTRA);
+  for (var i=0; i<allS.length; i++) {
+    if (allS[i].name === name) { showPanel(allS[i]); return; }
+  }
+}
+
+// ============================================================
+// \u591A\u6E90\u5730\u56FE\u52A0\u8F7D\uFF08\u4E0E\u539F\u7248\u5B8C\u5168\u76F8\u540C\u7684\u903B\u8F91\uFF09
+// ============================================================
+var sidebarOpen = !isMobilePortrait;
+
+var legendOpen = !isMobilePortrait;
+function toggleLegend() {
+  legendOpen = !legendOpen;
+  var body = document.getElementById('legend-body');
+  var btn = document.getElementById('legend-toggle-btn');
+  if (legendOpen) { body.classList.remove('collapsed'); btn.innerHTML = '▲'; }
+  else { body.classList.add('collapsed'); btn.innerHTML = '▼'; }
+}
+function toggleSidebar(){
+  sidebarOpen=!sidebarOpen;
+  var sb=document.getElementById("era-sidebar");
+  var tg=document.getElementById("sidebar-toggle");
+  var bar=document.getElementById("era-bar");
+  var tb=document.getElementById("toolbar");
+  if(sidebarOpen){
+    sb.classList.remove("collapsed");
+    tg.innerHTML="\u276F"; tg.style.left="80px";
+    bar.style.left="80px"; tb.style.left="88px";
+  } else {
+    sb.classList.add("collapsed");
+    tg.innerHTML="\u276E"; tg.style.left="0";
+    bar.style.left="0"; tb.style.left="8px";
+  }
+}
+
+if (isMobilePortrait) {
+  document.getElementById('legend-body').classList.add('collapsed');
+  document.getElementById('legend-toggle-btn').innerHTML = '▼';
+  document.getElementById('era-sidebar').classList.add('collapsed');
+  document.getElementById('sidebar-toggle').innerHTML = '\u276E';
+}
+
+updateEraBar(currentEra === '全部' ? {label:'全部', color:'#C8A951', yrs:'全朝代', desc:'华夏千年，万墳墓迹，一图尽览。'} : ERAS.find(function(e) { return e.label === currentEra; }));
+
+var MAP_URLS = [
+  'https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json',
+  'https://cdn.jsdelivr.net/npm/china-geojson@1.0.0/china.json',
+  'https://unpkg.com/china-map-echarts@latest/src/china.json',
+];
+
+function tryLoadMap(urls, index) {
+  if (index >= urls.length) {
+    document.getElementById('loading').innerHTML =
+      '<span style="color:#FF6347">\u5730\u56FE\u52A0\u8F7D\u5931\u8D25\uFF0C\u6240\u6709\u6E90\u5747\u4E0D\u53EF\u7528<br><small style="opacity:.6">\u8BF7\u68C0\u67E5\u7F51\u7EDC\u8FDE\u63A5</small></span>';
+    return;
+  }
+  document.querySelector('#loading span').textContent = '\u6B63\u5728\u52A0\u8F7D\u5730\u56FE (' + (index+1) + '/' + urls.length + ')...';
+  fetch(urls[index])
+    .then(function(r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(geoJson) {
+      document.getElementById('loading').classList.add('hidden');
+      echarts.registerMap('china', geoJson);
+      chart = echarts.init(document.getElementById('chart'), null, { renderer:'canvas' });
+      renderChart();
+      chart.on('click', function(params) {
+        if (params.seriesName === 'sites' || params.seriesName === 'active') {
+          handleSiteClick(params.name);
+        } else {
+          closePanel();
+        }
+      });
+      window.addEventListener('resize', function() { chart.resize(); });
+    })
+    .catch(function() { tryLoadMap(urls, index + 1); });
+}
+
+tryLoadMap(MAP_URLS, 0);
+</script>
+</body>
+</html>
